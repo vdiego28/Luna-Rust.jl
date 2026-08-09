@@ -19,6 +19,9 @@ permissions:
 # per-step, so a job added later can't forget it.
 env:
   AMALTHEA_RUST_SKIP_DOWNLOAD: "1"
+  # Ordinary CI and published packages must prove that CUDA is optional.
+  # Required-CUDA hardware jobs override this through the strict-test switch.
+  AMALTHEA_CUDA_BUILD: "off"
 
 jobs:
   test:
@@ -187,6 +190,54 @@ jobs:
         env:
           # Disable strict HDF5 file locking ONLY on Windows runners
           HDF5_USE_FILE_LOCKING: ${{ runner.os == 'Windows' && 'FALSE' || 'TRUE' }}
+
+  portability-arm64:
+    name: CPU-only install and FFI smoke (Linux ARM64)
+    runs-on: ubuntu-22.04-arm
+    if: github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: false
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "amalthea"
+
+      - name: Test and build CPU-only Rust library
+        run: |
+          test "$(uname -m)" = "aarch64"
+          cargo test --release
+          cargo build --release
+        working-directory: amalthea
+        env:
+          RUSTFLAGS: ""
+
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+          arch: 'default'
+
+      - name: Cache Julia packages
+        uses: julia-actions/cache@v3
+
+      - name: Install dependencies and build package
+        uses: julia-actions/julia-buildpkg@v1
+        with:
+          ignore-no-cache: true
+
+      - name: Verify ARM64 installer policy and native FFI
+        run: >-
+          julia --project -e
+          'using TestItemRunner;
+          @assert Sys.ARCH === :aarch64;
+          wanted = Set(["test_install_policy.jl", "test_native_phase0.jl"]);
+          @run_package_tests filter=ti->basename(String(ti.filename)) in wanted'
 
   benchmark:
     name: Native-path benchmark (regression guard)

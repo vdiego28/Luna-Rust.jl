@@ -8,6 +8,7 @@ amalthea/tests/test_julia_ffi.jl 18.4
 amalthea/tests/test_scans_io.jl 19.2
 amalthea/tests/test_stepper_dispatch.jl 17.9
 test_backend_config.jl 26.7
+test_install_policy.jl 20.0
 test_dispersion_rust.jl::Rust MarcatiliMode dispersion equivalence 26.2
 test_dispersion_rust.jl::Rust Zeisberger dispersion equivalence 27.7
 test_ionisation_rust.jl 20.6

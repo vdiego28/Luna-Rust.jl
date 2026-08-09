@@ -1,5 +1,12 @@
 # GPU-Resident Propagation (Track S3) Design Document
 
+> **Build prerequisite:** release binaries and ordinary `Pkg.build` installs
+> are CPU-only. Before using the runtime switches described below, compile real
+> PTX from a CUDA toolkit with `AMALTHEA_CUDA_BUILD=required`, close that Julia
+> process, and start a new one. The cross-platform commands, `NVCC`/
+> `CUDA_HOME`/`CUDA_PATH` overrides, and troubleshooting steps are in the
+> [installation and configuration guide](../../src/installation.md#cuda-installation).
+
 > **Current status (2026-08-02, updated): the correctness block is FIXED.**
 > `CudaNativeSim` computes real nonlinearity again and is verified on real
 > hardware — stage derivatives match CPU native to ~1e-15 (previously

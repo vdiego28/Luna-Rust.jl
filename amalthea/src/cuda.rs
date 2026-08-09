@@ -34,6 +34,25 @@ pub const CUBLAS_STATUS_SUCCESS: cublasStatus_t = 0;
 // Embed the PTX compiled by build.rs
 pub const KERNELS_PTX: &str = include_str!(concat!(env!("OUT_DIR"), "/kernels.ptx"));
 
+pub fn cuda_ptx_available() -> bool {
+    !KERNELS_PTX.starts_with("// DUMMY PTX")
+}
+
+#[cfg(test)]
+mod cpu_only_tests {
+    use super::*;
+
+    #[test]
+    fn cpu_only_build_reports_rebuild_instructions_before_driver_loading() {
+        if cuda_ptx_available() {
+            return;
+        }
+        let error = init_gpu_context().err().expect("CPU-only CUDA init failed");
+        assert!(error.contains("built without CUDA kernels"));
+        assert!(error.contains("AMALTHEA_CUDA_BUILD=required"));
+    }
+}
+
 struct Library {
     handle: *mut std::ffi::c_void,
 }
@@ -397,6 +416,14 @@ pub fn get_gpu_context() -> Option<&'static GpuContext> {
 }
 
 pub fn init_gpu_context() -> Result<&'static GpuContext, String> {
+    if !cuda_ptx_available() {
+        return Err(
+            "this amalthea library was built without CUDA kernels; the CPU backend is ready to use. \
+             To enable the experimental CUDA backend, rebuild from source with \
+             AMALTHEA_CUDA_BUILD=required and a working CUDA toolkit"
+                .to_owned(),
+        );
+    }
     GPU_CONTEXT
         .get_or_init(|| {
             let driver = get_driver_api()?;

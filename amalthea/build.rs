@@ -5,21 +5,51 @@ use std::process::Command;
 
 const CUDA_RAMAN_MAX_OSCILLATORS: usize = 64;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CudaBuildMode {
+    Off,
+    Auto,
+    Required,
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=src/kernels.cu");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed=AMALTHEA_CUDA_BUILD");
     println!("cargo:rerun-if-env-changed=AMALTHEA_REQUIRE_CUDA_TESTS");
     println!("cargo:rerun-if-env-changed=NVCC");
+    println!("cargo:rerun-if-env-changed=CUDA_HOME");
+    println!("cargo:rerun-if-env-changed=CUDA_PATH");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let dest_path = out_dir.join("kernels.ptx");
-    let require_cuda = env::var("AMALTHEA_REQUIRE_CUDA_TESTS").is_ok_and(|value| value == "1");
+    let require_cuda_tests =
+        env::var("AMALTHEA_REQUIRE_CUDA_TESTS").is_ok_and(|value| value == "1");
+    let cuda_mode = cuda_build_mode(
+        env::var("AMALTHEA_CUDA_BUILD").ok().as_deref(),
+        require_cuda_tests,
+    )
+    .unwrap_or_else(|message| panic!("{message}"));
 
     write_cuda_raman_limits(&out_dir).expect("failed to write CUDA Raman capacity contract");
 
-    let nvcc = find_nvcc();
-    if let Err(message) = compile_or_fallback(nvcc.as_deref(), &dest_path, require_cuda) {
+    let nvcc = (cuda_mode != CudaBuildMode::Off).then(find_nvcc).flatten();
+    if let Err(message) = configure_cuda(cuda_mode, nvcc.as_deref(), &dest_path) {
         panic!("{message}");
+    }
+}
+
+fn cuda_build_mode(value: Option<&str>, require_cuda_tests: bool) -> Result<CudaBuildMode, String> {
+    if require_cuda_tests {
+        return Ok(CudaBuildMode::Required);
+    }
+    match value.unwrap_or("auto").trim().to_ascii_lowercase().as_str() {
+        "off" => Ok(CudaBuildMode::Off),
+        "auto" => Ok(CudaBuildMode::Auto),
+        "required" => Ok(CudaBuildMode::Required),
+        value => Err(format!(
+            "invalid AMALTHEA_CUDA_BUILD={value:?}; expected off, auto, or required"
+        )),
     }
 }
 
@@ -38,18 +68,40 @@ fn find_nvcc() -> Option<PathBuf> {
     if let Some(nvcc) = env::var_os("NVCC") {
         return Some(PathBuf::from(nvcc));
     }
-    // Prefer the explicitly restored local CUDA toolchain. `NVCC` remains an
-    // override for CI and nonstandard installations; the compatibility
-    // symlink is only a fallback for ordinary developer machines.
-    let cuda_nvcc = PathBuf::from("/usr/local/cuda-13.3/bin/nvcc");
-    if cuda_nvcc.exists() {
-        Some(cuda_nvcc)
-    } else if Path::new("/usr/local/cuda/bin/nvcc").exists() {
-        Some(PathBuf::from("/usr/local/cuda/bin/nvcc"))
-    } else if Command::new("nvcc").arg("--version").status().is_ok() {
-        Some(PathBuf::from("nvcc"))
-    } else {
-        None
+    for root_var in ["CUDA_HOME", "CUDA_PATH"] {
+        if let Some(root) = env::var_os(root_var) {
+            let candidate = PathBuf::from(root).join("bin").join(if cfg!(windows) {
+                "nvcc.exe"
+            } else {
+                "nvcc"
+            });
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    let conventional = PathBuf::from("/usr/local/cuda/bin/nvcc");
+    if conventional.is_file() {
+        return Some(conventional);
+    }
+    Command::new("nvcc")
+        .arg("--version")
+        .status()
+        .ok()
+        .filter(|status| status.success())
+        .map(|_| PathBuf::from("nvcc"))
+}
+
+fn configure_cuda(
+    mode: CudaBuildMode,
+    nvcc: Option<&Path>,
+    dest_path: &Path,
+) -> Result<(), String> {
+    match mode {
+        CudaBuildMode::Off => write_dummy_ptx(dest_path)
+            .map_err(|error| format!("failed to write CPU-only PTX marker: {error}")),
+        CudaBuildMode::Auto => compile_or_fallback(nvcc, dest_path, false),
+        CudaBuildMode::Required => compile_or_fallback(nvcc, dest_path, true),
     }
 }
 
@@ -81,7 +133,9 @@ fn compile_or_fallback(
 
     if require_cuda {
         return Err(format!(
-            "AMALTHEA_REQUIRE_CUDA_TESTS=1 requires nvcc and real PTX: {failure}"
+            "CUDA support is required but nvcc did not produce real PTX: {failure}. \
+             Set NVCC or CUDA_HOME/CUDA_PATH to a working CUDA toolkit, or use \
+             AMALTHEA_CUDA_BUILD=off for a CPU-only build"
         ));
     }
 
@@ -140,12 +194,57 @@ mod tests {
     }
 
     #[test]
+    fn explicit_off_never_invokes_configured_nvcc() {
+        let dest_path = test_ptx_path("explicit-off");
+        let _ = std::fs::remove_file(&dest_path);
+
+        configure_cuda(
+            CudaBuildMode::Off,
+            Some(Path::new("/definitely/not/a/real/nvcc")),
+            &dest_path,
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&dest_path).unwrap(),
+            "// DUMMY PTX\n"
+        );
+
+        std::fs::remove_file(dest_path).unwrap();
+    }
+
+    #[test]
+    fn cuda_build_mode_has_explicit_policy_and_strict_test_precedence() {
+        assert_eq!(cuda_build_mode(None, false).unwrap(), CudaBuildMode::Auto);
+        assert_eq!(
+            cuda_build_mode(Some("off"), false).unwrap(),
+            CudaBuildMode::Off
+        );
+        assert_eq!(
+            cuda_build_mode(Some("AUTO"), false).unwrap(),
+            CudaBuildMode::Auto
+        );
+        assert_eq!(
+            cuda_build_mode(Some(" required "), false).unwrap(),
+            CudaBuildMode::Required
+        );
+        assert_eq!(
+            cuda_build_mode(Some("off"), true).unwrap(),
+            CudaBuildMode::Required
+        );
+        assert!(
+            cuda_build_mode(Some("maybe"), false)
+                .unwrap_err()
+                .contains("expected off, auto, or required")
+        );
+    }
+
+    #[test]
     fn strict_cuda_build_rejects_missing_nvcc() {
         let dest_path = test_ptx_path("strict-missing-nvcc");
         let _ = std::fs::remove_file(&dest_path);
 
         let error = compile_or_fallback(None, &dest_path, true).unwrap_err();
-        assert!(error.contains("AMALTHEA_REQUIRE_CUDA_TESTS=1"));
+        assert!(error.contains("CUDA support is required"));
         assert!(!dest_path.exists());
     }
 

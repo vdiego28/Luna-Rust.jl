@@ -144,8 +144,8 @@ or "verified" inside a superseded narrative do not outrank this list.
    symbol, added after the tag). Root cause is the version keying, not the
    name matching: `Project.toml` still reads `1.0.0` while `main`'s sources
    are far ahead of it. `deps/build.jl` now refuses the download entirely for
-   a source checkout (`_is_source_checkout()`, `.git` present — registered
-   `Pkg.add` installs keep the fast path), and both workflows set
+   a source checkout (`_is_source_checkout()`, `.git` present — installed
+   tagged packages keep the fast path), and both workflows set
    `AMALTHEA_RUST_SKIP_DOWNLOAD=1` at workflow level. **Closed
    2026-07-28:** immediately after tagging `v1.0.1`, `main` moved to
    `Project.toml` version `1.0.2-DEV` (and Python `1.0.2.dev0`), so source
@@ -1335,9 +1335,8 @@ had been holding *every* stepper's dense output at first order; see the
      order gain.
 
 ### ⚪ S6 — Distribution & ecosystem (suggestions 9, 13, 14)
-*Items 1-2 are implemented. Item 3 was measured and parked; the live S6 work
-is the v1.0.0 asset-name repair/validation and the example repairs in the
-resume queue.*
+*Items 1-2 are implemented. Item 3 was measured and parked. Item 4 is the live
+ARM64/CPU-only installation hardening designed in `native-port/PLANS.md` §13.*
 1. 🟢 **Done 2026-07-11.** Prebuilt binaries (item 13).
    `.github/workflows/release.yml`: triggered on `v*` tags (same tags
    TagBot.yml pushes after a Julia registry release) or manual dispatch;
@@ -1416,6 +1415,18 @@ resume queue.*
    (the item's stated follow-on) is blocked separately regardless: FFTW
    and HDF5 are both `dlopen`ed native libraries with no general `dlopen`
    equivalent in WASM.
+4. 🟡 **Portable ARM64 and CPU-only installation — implemented locally
+   2026-08-09; first hosted ARM64 run pending.** A native Linux AArch64 release
+   asset is wired, with architecture-correct installer triple selection so
+   unsupported architectures never receive a
+   mismatched binary, and make package/release builds explicitly CPU-only by
+   default. Direct Cargo development retains automatic CUDA discovery;
+   `AMALTHEA_CUDA_BUILD=required` is the explicit source-build route for the
+   experimental GPU backend. Acceptance requires native ARM64 CI through a
+   Julia build + FFI smoke test; the x86 source build that never probes CUDA is
+   green, and the ARM workflow will provide the remaining native verification
+   after this branch is pushed.
+   Full design and configuration semantics: `native-port/PLANS.md` §13.
 
 **Current execution order:** use the dated resume queue at the top of this
 file. The older track-order plan has been completed or superseded.

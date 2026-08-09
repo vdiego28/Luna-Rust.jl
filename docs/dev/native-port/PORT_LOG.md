@@ -3384,3 +3384,73 @@ exact CI-shaped command `python3 test/parallel_group_tests.py --group fields
 **Next:** Commit this follow-up on `luna-plans-07-11`. Do not push unless the
 lead explicitly requests it; after push, confirm both the branch and eventual
 main Actions runs use the preflight and finish green.
+
+## 2026-08-09 — S6 item 4 — ARM64 and CPU-only installation — Codex (GPT-5)
+**Status:** in-progress (implementation and local validation complete; first
+hosted Linux ARM64 run requires a commit/push).
+**Did:** Made package installation explicitly CPU-only by default, added a
+supported opt-in CUDA build policy and actionable CPU-only runtime diagnostic,
+corrected release-binary architecture selection, and added Linux ARM64 release
+and standing install/FFI CI jobs. Documented the user-facing installation and
+configuration paths in the README and a new generated-manual page covering
+Linux, macOS, Windows, ARM, source builds, CPU/CUDA selection, shell syntax,
+verification, updates, and troubleshooting.
+**How:** `amalthea/build.rs:9-252` implements
+`AMALTHEA_CUDA_BUILD=off|auto|required`, strict-test precedence, portable
+`NVCC`/`CUDA_HOME`/`CUDA_PATH` discovery, and policy tests;
+`amalthea/src/cuda.rs:37-57,418-428` identifies dummy PTX before driver loading
+and explains how to rebuild. `deps/build_platforms.jl:1-20` maps exact
+`(Sys.KERNEL, Sys.ARCH)` pairs and rejects CPU-only prebuilts for CUDA-required
+builds; `deps/build.jl:34,98-108,185-219` defaults package source builds to
+`off` and skips prebuilts when CUDA is requested. `.github/workflows/release.yml:28-53`
+adds `aarch64-unknown-linux-gnu` on the older `ubuntu-22.04-arm` glibc baseline;
+`.github/workflows/run_tests.yml:21-24,194-239` enforces CPU-only ordinary CI
+and adds native ARM package-build plus FFI smoke coverage. Installer policy is
+covered by `test/test_install_policy.jl:1-32` and registered in
+`test/rust_test_timings.txt`. `README.md:76-131` gives the concise installation
+path; `docs/src/installation.md:1-379` is the authoritative cross-platform
+guide and is registered in `docs/make.jl:9-12`; `docs/src/index.md:1-4` links
+new users to it, while `docs/dev/native-port/GPU.md:3-8` sends GPU developers
+to the same CUDA build prerequisite and troubleshooting instructions.
+**Decisions:** Make package/release builds CPU-only so CUDA is never an
+installation prerequisite; retain direct Cargo's `auto` default for developer
+convenience; force source compilation for `auto`, `required`, or strict CUDA
+tests because published binaries intentionally contain no kernels. Scope
+first-class binary support to 64-bit Linux ARM and Apple Silicon; unsupported
+OS/architecture pairs fall back to source instead of receiving a mismatched
+binary. Use GitHub's Ubuntu 22.04 ARM runner rather than 24.04 for broader glibc
+compatibility.
+**Gotchas:** Existing `AMALTHEA_REQUIRE_CUDA_TESTS=1` must override
+`AMALTHEA_CUDA_BUILD=off` in both Cargo policy and prebuilt selection. A local
+`cargo check --target aarch64-unknown-linux-gnu --tests` reaches Criterion's
+`alloca` build script and needs an `aarch64-linux-gnu-gcc` cross compiler; the
+library-only ARM check passes, while the new native ARM runner owns actual
+link/test validation. The first full Rust-group run found only a missing timing
+manifest row for the new test; it was added before the clean rerun.
+Amalthea is not yet registered in Julia General, and the current `v1.0.2`
+release predates both Linux ARM64 assets and `AMALTHEA_CUDA_BUILD`; user docs
+therefore pin the real stable tag only on its three supported binary platforms
+and direct ARM, other source-fallback platforms, and CUDA users to `main` until
+the first release containing this work.
+**Tests:** CPU-only `cargo test --release` passed 81/81 unit tests and 5/5
+build-policy tests. `deps/build.jl` succeeded with
+`NVCC=/definitely/not/a/real/nvcc` and no CUDA-mode setting, proving its default
+does not invoke CUDA. Focused installer + Phase 0 FFI passed 46/46; installer +
+manifest passed 372/372. Linux ARM64 `cargo check --target
+aarch64-unknown-linux-gnu --lib` passed; the broader `--tests` check stopped at
+the expected missing cross C compiler noted above. Host CUDA 13.3
+`AMALTHEA_CUDA_BUILD=required cargo build --release` passed, then the library
+was rebuilt CPU-only. The final CPU-only
+`LUNA_TEST_GROUP=rust julia --project test/runtests.jl` gate passed 42,749 with
+3 expected broken assertions (42,752 total) in 7m41.7s. Both workflows parsed
+as YAML; targeted `rustfmt --check` and `git diff --check` passed. The complete
+Documenter build (`julia --startup-file=no --project=docs docs/make.jl`) passed
+doctests, cross-reference checks, document checks, and HTML rendering; its only
+warnings were expected local deployment/remote-HEAD auto-detection warnings.
+GitHub's authoritative General-registry path returned 404, while the release
+API confirmed `v1.0.2` as latest with exactly Linux x86_64, macOS AArch64,
+Windows x86_64, and checksum-manifest assets; the install commands and
+temporary pre-release guidance reflect that state.
+**Next:** Commit and push when the lead requests it, then require the new
+`CPU-only install and FFI smoke (Linux ARM64)` hosted job to pass. If green,
+mark S6 item 4 complete; the next tag will publish the first Linux ARM64 asset.

@@ -31,17 +31,11 @@ const _AMALTHEA_RELEASE_REPO = "vdiego28/Amalthea.jl"
 const _LAST_LEGACY_NAMED_VERSION = v"1.0.0"
 const _LEGACY_LIBNAME_PREFIX = "libluna_rust"
 
+include(joinpath(@__DIR__, "build_platforms.jl"))
+
 _libamalthea_name() = Sys.iswindows() ? "amalthea.dll" :
                         Sys.isapple()  ? "libamalthea.dylib" :
                                          "libamalthea.so"
-
-# Only the three triples actually built by .github/workflows/release.yml
-# (matching run_tests.yml's CI matrix hosts) — anything else falls back to
-# source. Not a general cross-compilation target list.
-_target_triple() = Sys.iswindows() ? "x86_64-pc-windows-msvc" :
-                    Sys.isapple()  ? "aarch64-apple-darwin" :
-                    Sys.islinux() && Sys.ARCH === :x86_64 ? "x86_64-unknown-linux-gnu" :
-                                     nothing
 
 """
     _is_source_checkout() -> Bool
@@ -57,8 +51,8 @@ locally built one with it. That is not hypothetical: it broke every CI job on
 2026-07-25 with `undefined symbol: native_compute_extra_stages` (a symbol added
 after v1.0.0 was tagged), and would hit any `Pkg.develop` user the same way.
 
-A registered install (`Pkg.add`) has no `.git` — Pkg unpacks a tarball — so the
-prebuilt fast path is unaffected for the users it exists for.
+An installed tagged package (`Pkg.add(url=..., rev="vX.Y.Z")`) has no `.git`,
+so the prebuilt fast path is unaffected for the users it exists for.
 """
 _is_source_checkout() = ispath(joinpath(@__DIR__, "..", ".git"))
 
@@ -103,6 +97,14 @@ layout — the production call site never passes it.
 """
 function try_download_prebuilt(rust_dir; base_url::Union{Nothing,AbstractString}=nothing)
     get(ENV, "AMALTHEA_RUST_SKIP_DOWNLOAD", "") == "1" && return false
+    cuda_build = get(ENV, "AMALTHEA_CUDA_BUILD", "off")
+    require_cuda_tests = get(ENV, "AMALTHEA_REQUIRE_CUDA_TESTS", "0")
+    if !_cpu_prebuilt_allowed(cuda_build, require_cuda_tests)
+        requested = require_cuda_tests == "1" ?
+            "AMALTHEA_REQUIRE_CUDA_TESTS=1" : "AMALTHEA_CUDA_BUILD=$(lowercase(strip(cuda_build)))"
+        @info "$requested requests a source build; skipping the CPU-only release binary."
+        return false
+    end
     if _is_source_checkout()
         @info "Source checkout detected (.git present); building the Rust library " *
               "from source rather than downloading a release binary."
@@ -184,7 +186,8 @@ if isdir(rust_dir)
         @info "Building Rust library amalthea from source..."
         try
             run(addenv(Cmd(`cargo build --release`, dir=rust_dir),
-                       "RUSTFLAGS" => get(ENV, "RUSTFLAGS", "")))
+                       "RUSTFLAGS" => get(ENV, "RUSTFLAGS", ""),
+                       "AMALTHEA_CUDA_BUILD" => get(ENV, "AMALTHEA_CUDA_BUILD", "off")))
             @info "Successfully compiled Rust library amalthea."
         catch e
             # No prebuilt binary was available for this platform/package-version (see
@@ -199,7 +202,7 @@ if isdir(rust_dir)
 
             Amalthea.jl offloads its numerical kernels to a native Rust backend. A
             prebuilt binary is downloaded automatically for common platforms
-            (Linux x86_64, macOS aarch64, Windows x86_64); this system either isn't
+            (Linux x86_64/aarch64, macOS aarch64, Windows x86_64); this system either isn't
             one of those, has no matching release asset for this package version, or
             the download was skipped/failed, so `Pkg.build` fell back to compiling
             from source — which requires a working Rust toolchain (cargo >= 1.85).
@@ -210,7 +213,9 @@ if isdir(rust_dir)
 
             If you expected the prebuilt-binary download to work instead, check that
             the `AMALTHEA_RUST_SKIP_DOWNLOAD` environment variable is not set to "1"
-            and that your network can reach github.com.
+            and that your network can reach github.com. Release binaries are CPU-only.
+            To build the experimental CUDA backend, install a CUDA toolkit and set
+            `AMALTHEA_CUDA_BUILD=required` before re-running `Pkg.build`.
             """ exception=e
             rethrow(e)
         end

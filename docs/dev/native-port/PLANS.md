@@ -20,6 +20,7 @@ the durable rationale.
 | [Beyond-Luna math](#6-beyond-luna-math-options-backlog-phase-j-item-6) | Phase J.6 | **Closed.** Direct error/PPT: do not pursue; short-kernel Raman measured 2026-07-25 and rejected |
 | [2026-07-31 correctness, safety, CI, and GPU campaign](#11-2026-07-31-correctness-safety-ci-and-gpu-campaign) | Correctness, safety, CI, and first ADK slice | **Complete 2026-07-31.** Four reviewed work units landed; thresholded ADK is retained at `_GPU_ADK_N_THRESHOLD = 8193` |
 | [GPU mode-averaged SDO Raman](#12-gpu-mode-averaged-sdo-raman) | S3 broader GPU physics | **Complete 2026-08-02.** RealGrid carrier and EnvGrid envelope verified; `:SiO2` and other geometries remain out of scope |
+| [Portable installation on ARM64 and CPU-only hosts](#13-portable-installation-on-arm64-and-cpu-only-hosts) | S6 item 4 | **Implemented locally 2026-08-09; first hosted ARM64 run pending.** Linux ARM64 binaries and an explicit CPU-only build policy are wired |
 
 ---
 
@@ -2784,3 +2785,72 @@ The 64-oscillator kernel state is 1024 bytes of `Float64` ADE state per active
 thread (`q[64]` plus `dq[64]`), versus 512 bytes at the old 32-oscillator
 limit. The real CUDA 13.3 cubin reports a 1024-byte stack frame, 62 registers,
 and zero spill stores/loads, so the retained mode-averaged workload is usable.
+
+## 13. Portable installation on ARM64 and CPU-only hosts
+
+Status: **Implemented locally 2026-08-09; first hosted ARM64 run pending.**
+Related tracking: `BACKLOG.md` S6 item 4.
+
+### 13.1 Problem and supported boundary
+
+The native crate is already architecture-safe: x86 AVX2 code is guarded by
+`cfg(target_arch = "x86_64")`, AArch64 has its own detection path, and the
+resident CPU kernels have scalar/portable implementations. CUDA libraries are
+loaded dynamically only after the explicitly opt-in GPU backend is selected.
+However, installation does not make those properties dependable:
+
+- releases publish no `aarch64-unknown-linux-gnu` asset, so a Raspberry Pi or
+  other 64-bit Linux ARM user must have Cargo even for a tagged release;
+- `deps/build.jl` maps every Windows host to x86_64 and every macOS host to
+  AArch64 instead of matching both OS and architecture, which can request an
+  incompatible binary;
+- source builds probe for `nvcc` unconditionally and use a host-specific
+  `/usr/local/cuda-13.3` path before conventional CUDA locations;
+- the dummy-PTX fallback makes CPU-only builds work, but there is no supported
+  user setting for selecting that mode and an accidental later CUDA opt-in
+  reports only a low-level PTX load error.
+
+This item makes **64-bit ARM** first-class: Apple Silicon remains supported and
+Linux AArch64 gains a release asset. ARMv6/ARMv7, Windows ARM64, Intel macOS,
+and non-glibc Linux remain source-build fallbacks rather than being assigned a
+binary built for another architecture. They are not claimed as release-tested
+platforms by this item.
+
+### 13.2 Build-time CUDA contract
+
+Introduce `AMALTHEA_CUDA_BUILD=off|auto|required`:
+
+- `off` writes the CPU-only PTX marker without looking for or invoking `nvcc`;
+- `auto` tries `NVCC`, `CUDA_HOME`/`CUDA_PATH`, `/usr/local/cuda`, and then
+  `PATH`, retaining the current developer convenience of falling back to a
+  CPU-only library if compilation is unavailable;
+- `required` requires `nvcc` and real PTX and fails the build otherwise.
+
+`deps/build.jl` and release binaries default to `off`, so installing Amalthea
+never requires a CUDA toolkit. Direct `cargo build` remains `auto` to preserve
+the current developer workflow. `AMALTHEA_REQUIRE_CUDA_TESTS=1` remains a
+backwards-compatible strict-test override and forces `required` regardless of
+the ordinary setting. Invalid values fail with an actionable message rather
+than silently selecting a policy.
+
+The runtime CUDA backend remains opt-in through
+`AMALTHEA_USE_RUST_CUDA_NATIVE=1`. If that switch reaches a library built with
+dummy PTX, initialization must fail before loading CUDA libraries and explain
+that the user needs a source rebuild with `AMALTHEA_CUDA_BUILD=required`.
+
+### 13.3 Packaging and CI
+
+`deps/build.jl` will resolve target triples from `(Sys.KERNEL, Sys.ARCH)` and
+recognize exactly four release artifacts: Linux x86_64, Linux AArch64, macOS
+AArch64, and Windows x86_64. The release workflow adds a native
+`ubuntu-22.04-arm` build for `aarch64-unknown-linux-gnu` (the oldest hosted ARM
+image, for a broader glibc baseline); all release jobs set
+portable `RUSTFLAGS=""` and `AMALTHEA_CUDA_BUILD=off`.
+
+A standing ARM64 portability job must build and test the crate natively with
+CUDA disabled, run Julia's package build on that same host, and execute a small
+FFI smoke test. Pure installer tests cover every supported and deliberately
+unsupported OS/architecture mapping. Rust build-policy tests cover all three
+CUDA modes, strict-test precedence, invalid configuration, and the CPU-only PTX
+marker. Local x86 validation uses `AMALTHEA_CUDA_BUILD=off` and must not depend
+on this workstation's installed CUDA toolkit.

@@ -62,47 +62,73 @@ The `amalthea` crate provides the high-performance numerical engine that powers 
   CI. `dispatch.rs` detects hardware for its own tests but is not a
   propagation dispatcher, and there is no Vulkan implementation.
 - **Parallelised transforms**: the quasi-discrete Hankel transform (QDHT) used in free-space propagation is parallelised with [Rayon](https://github.com/rayon-rs/rayon).
-- **Raman solver**: the time-domain Raman solver uses an explicit matrix-exponential integrator with AVX2 optimisation.
+- **Raman solver**: the time-domain Raman solver uses an explicit matrix-exponential integrator, with an AVX2 fast path on `x86_64` and portable code on ARM64 and other CPUs.
 - **Cross-platform**: builds and runs on Linux, macOS, and Windows, including
-  the `Scans.jl`/`QueueExec` file-locking path (`LockFileEx`/`UnlockFileEx` on
-  Windows), which is exercised by CI on every push (`windows-2025-vs2026`
-  runner). See `docs/dev/BACKLOG.md`'s "Windows scan-lock validation" entry.
+  Linux ARM64 and Apple Silicon. CUDA is optional; ordinary installations use
+  the resident CPU backend and do not need an NVIDIA GPU or CUDA toolkit. The
+  `Scans.jl`/`QueueExec` file-locking path also supports Windows through
+  `LockFileEx`/`UnlockFileEx`, exercised by CI on every push
+  (`windows-2025-vs2026` runner). See `docs/dev/BACKLOG.md`'s "Windows
+  scan-lock validation" entry.
 
 The Rust backend is called transparently via Julia's `ccall` interface; no Rust knowledge is needed to use Amalthea.jl.
 
 ## Installation
 
-Amalthea.jl requires Julia v1.10 or later, which can be obtained from [here](https://julialang.org/downloads/). In a Julia terminal, to install Amalthea.jl enter the package manager with `]` and run:
+Amalthea.jl requires Julia 1.10 or newer. It is not yet registered in Julia's
+General registry, so install the latest tagged release directly from GitHub
+(currently `v1.0.2`):
 
 ```julia
-]
-add https://github.com/vdiego28/Amalthea.jl
+pkg> add https://github.com/vdiego28/Amalthea.jl#v1.0.2
 ```
 
-This will install and precompile Amalthea.jl and all its dependencies (including the native Rust backend, `amalthea`).
+Check the [Releases page](https://github.com/vdiego28/Amalthea.jl/releases)
+and substitute a newer stable tag when available.
 
-**On the Rust toolchain requirement.** For the three platforms Amalthea.jl
-intends to publish release binaries for (Linux x86_64, macOS aarch64/Apple
-Silicon, Windows x86_64), the build step (`deps/build.jl`) first attempts to
-download a prebuilt `amalthea` library matching the package version, then falls
-back to compiling from source. [Version
-1.0.1](https://github.com/vdiego28/Amalthea.jl/releases/tag/v1.0.1) publishes
-canonical `libamalthea-<triple>` binaries and a verified checksum manifest.
-Version 1.0.0's binaries used the pre-rename `libluna_rust-<triple>` names;
-the installer recognises those names only for that legacy release. A
-`Pkg.add` of either released version on those platforms therefore needs no
-Rust toolchain.
+The normal installation is CPU-only and requires neither CUDA nor an NVIDIA
+GPU. The installer downloads a checksum-verified native library when the
+release contains one, otherwise it compiles from source with Rust 1.85 or
+newer:
 
-**Building from a git checkout always compiles from source** — a working
-[Rust toolchain](https://rustup.rs/) (cargo >= 1.85) on `PATH` is required for
-`Pkg.develop`, a clone of this repo, and CI. A checkout's sources run ahead of
-the last tagged release while `Project.toml` still names that release, so
-downloading its binary would install a library older than the FFI calls in
-`src/`. `AMALTHEA_RUST_SKIP_DOWNLOAD=1` forces the source-build path for a
-registered install too. Development branches use a `-DEV` package version so
-source archives cannot accidentally select the preceding release's binary.
+| Platform | Release binary |
+|---|---|
+| Linux `x86_64` | Yes |
+| Linux ARM64/AArch64 | Starting with the first release containing this ARM64 work |
+| macOS Apple Silicon | Yes |
+| Windows `x86_64` | Yes |
+| Intel macOS, Windows ARM64, ARM32, musl Linux, other systems | Source build; not release-tested |
 
-If `Pkg.build`/`Pkg.instantiate` fails, look for a `Failed to find/compile the Rust library` error from the build script — it names the actual problem and how to fix it. The most common cause is simply that `cargo` isn't installed or isn't on `PATH`; installing it via [rustup.rs](https://rustup.rs/) and re-running `Pkg.build("Amalthea")` resolves it.
+Until the first release containing this installer work, Linux ARM64 and the
+source-fallback platforms should install `main`; older tags predate the
+architecture-safe selector. A git checkout or the `main` development branch
+always builds from source and therefore requires [rustup](https://rustup.rs/):
+
+```julia
+using Pkg
+Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="main")
+```
+
+The explicit CUDA build policy is present on `main` and will be included in the
+first release containing this installer work. With `v1.0.2`, install `main`
+using the source command above first. Then compile and enable the experimental
+CUDA backend in a fresh Julia process and restart Julia afterward:
+
+```julia
+ENV["AMALTHEA_CUDA_BUILD"] = "required"
+using Pkg
+Pkg.build("Amalthea")
+```
+
+```julia
+ENV["AMALTHEA_USE_RUST_CUDA_NATIVE"] = "1"
+ENV["AMALTHEA_NATIVE_GPU"] = "on"
+using Amalthea
+```
+
+See the complete [installation and configuration guide](docs/src/installation.md)
+for Linux, macOS, Windows, ARM, source prerequisites, CPU/CUDA switching,
+environment-variable syntax, updating, verification, and troubleshooting.
 
 ## Quickstart
 
