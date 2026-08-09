@@ -77,8 +77,8 @@ function solve_precon(f!, linop, y0, t, dt, tmax;
     stepper = nothing
     if use_native && rust_norm_ok && isfile(_LIBAMALTHEA_RK45) &&
        eltype(y0) == ComplexF64 && native_ok
-        # Any scope restriction accumulated across Phases 1-7 (EnvGrid
-        # variants, full=true modal, thg=false Raman, an ineligible extra
+        # Any scope restriction accumulated across Phases 1-7 (unsupported
+        # grid/modal variants, thg=false Raman, an ineligible extra
         # response, ...) throws `NativeIneligible` from deep inside the
         # constructor — caught here and treated as "fall back to the Julia
         # stepper for this call", not a crash, now that native is the
@@ -833,8 +833,8 @@ end
 
 Thrown by `RustNativeStepper`'s constructor when the requested geometry/
 config is outside the native port's current scope (any of the per-phase
-narrowing restrictions documented in `docs/dev/native-port/MATH.md` — EnvGrid
-variants, `full=true` modal, `thg=false` Raman, an unsupported/ineligible
+narrowing restrictions documented in `docs/dev/native-port/MATH.md` — unsupported
+grid/modal variants, `thg=false` Raman, an unsupported/ineligible
 extra response such as plasma or Raman on a Kerr-only geometry, ...).
 
 This is a **distinct exception type from a bare `error()`** specifically so
@@ -1039,19 +1039,123 @@ end
 True iff the experimental GPU-resident stepper (`CudaNativeSim`,
 `amalthea/src/cuda_native.rs`) can handle this exact config. The supported
 families are mode-averaged (`TransModeAvg`) with the existing RealGrid/EnvGrid
-Kerr/plasma/Raman matrix, and the radial (`TransRadial`) RealGrid/EnvGrid
+Kerr/plasma/Raman matrix, modal (`TransModal`) constant-radius RealGrid/EnvGrid
+scalar Kerr from Plans 14-15 plus scalar RealGrid SDO Raman from Plan 16, and
+the radial (`TransRadial`) RealGrid/EnvGrid
 scalar-Kerr paths. Radial RealGrid may add at most one PPT or thresholded ADK
-`PlasmaCumtrapz`; EnvGrid plasma remains unsupported. Radial CUDA is
+`PlasmaCumtrapz`, or one supported SDO `RamanPolarField`/`RamanPolarEnv`;
+EnvGrid plasma remains unsupported. Radial CUDA is
 deliberately narrower:
-constant linop, scalar density, no shot noise, and no Raman or mixture
-response; its QDHT, temporal FFT, and column-segmented plasma scans remain
-resident on the device.
+constant linop, scalar density, no shot noise, and (for radial RealGrid) at
+most one supported SDO `RamanPolarField`, or (for radial EnvGrid) one
+supported SDO `RamanPolarEnv`; radial QDHT, temporal FFT, Raman series, and
+column-local scratch remain resident on the device.
+
+Free-space (`TransFree`) is also supported for explicit CUDA dispatch in the
+Plan 17 RealGrid and Plan 18 EnvGrid scalar-Kerr, constant-linop/constant-norm
+slices, plus Plan 19's RealGrid scalar-Kerr + PPT, Plan 20's thresholded-ADK,
+and Plan 21's RealGrid scalar-Kerr + SDO Raman slices. Their column-major
+`(t,y,x)` volumes use one joint 3-D transform; z-dependent norm/linop, EnvGrid
+plasma/Raman, mixed plasma+Raman, noise, unthresholded ADK, and `:auto` remain
+excluded.
 
 Pure config-shape check: does not read the `cuda_native`/`gpu_dispatch`
 toggles or the problem size — see [`_gpu_native_eligible`](@ref) for the full
 dispatch decision.
 """
 function _gpu_kernel_supports(f!, linop)
+    if f! isa Amalthea.NonlinearRHS.TransFree
+        # Plans 17-21: Rust owns one joint `(n_x,n_y,n_time)` cuFFT pipeline
+        # for either the time-halved RealGrid pair or full-spectrum EnvGrid
+        # c2c transform. Julia's column-major `(n_time,n_y,n_x)` layout and
+        # transferred free-space M normalization remain the oracle contract.
+        (f!.grid isa Amalthea.Grid.RealGrid ||
+         f!.grid isa Amalthea.Grid.EnvGrid) || return false
+        linop isa Array{ComplexF64} || return false
+        f!.densityfun(0.0) isa Real || return false
+        isnothing(f!.Et_noise) || return false
+        f!.normfun isa Amalthea.NonlinearRHS.ZDepNormFree && return false
+        norm0 = copy(f!.normfun(0.0))
+        norm0 == f!.normfun(1.0) || return false
+        if f!.grid isa Amalthea.Grid.EnvGrid
+            return length(f!.resp) == 1 && _is_plain_kerr_resp(f!.resp[1])
+        end
+        kerr_resps = filter(_is_plain_kerr_resp, f!.resp)
+        plasma_resps = filter(r -> r isa Amalthea.Nonlinear.PlasmaCumtrapz, f!.resp)
+        raman_resps = filter(r -> r isa Amalthea.Nonlinear.RamanPolarField ||
+                              r isa Amalthea.Nonlinear.RamanPolarEnv, f!.resp)
+        length(kerr_resps) == 1 || return false
+        length(plasma_resps) <= 1 || return false
+        length(raman_resps) <= 1 || return false
+        length(kerr_resps) + length(plasma_resps) + length(raman_resps) == length(f!.resp) ||
+            return false
+        if !isempty(raman_resps)
+            # Plan 21 is deliberately the free-space RealGrid SDO field path:
+            # one RamanPolarField beside Kerr, with no plasma, noise, mixture,
+            # EnvGrid response, or unsupported Raman response family.
+            isempty(plasma_resps) || return false
+            raman = raman_resps[1]
+            raman isa Amalthea.Nonlinear.RamanPolarField || return false
+            rr = raman.r
+            rr isa Amalthea.Raman.CombinedRamanResponse || return false
+            Rs = Amalthea.Raman.flatten_sdo_oscillators(rr)
+            return !isnothing(Rs) && !isempty(Rs) &&
+                   length(Rs) <= _GPU_RAMAN_MAX_OSCILLATORS
+        end
+        isempty(plasma_resps) && return true
+        ratefunc = plasma_resps[1].ratefunc
+        return ratefunc isa Amalthea.Ionisation.IonRatePPTAccel ||
+               (ratefunc isa Amalthea.Ionisation.IonRateADK && ratefunc.threshold)
+    end
+
+    if f! isa Amalthea.NonlinearRHS.TransModal
+        # Plans 14-15: constant-radius modal Kerr is resident on CUDA for
+        # RealGrid and EnvGrid. Plan 16 adds only scalar RealGrid SDO Raman;
+        # adaptive cubature remains the host driver while every point batch
+        # uses the device synthesis/FFT/nonlinearity/projection pipeline.
+        is_real_grid = f!.grid isa Amalthea.Grid.RealGrid
+        is_env_grid = f!.grid isa Amalthea.Grid.EnvGrid
+        (is_real_grid || is_env_grid) || return false
+        linop isa Array{ComplexF64} || return false
+        f!.densityfun(0.0) isa Real || return false
+        isnothing(f!.Emω_noise) || return false
+        f!.ts.npol in (1, 2) || return false
+        kerr_resps = filter(_is_plain_kerr_resp, f!.resp)
+        raman_resps = filter(r -> r isa Amalthea.Nonlinear.RamanPolarField ||
+                              r isa Amalthea.Nonlinear.RamanPolarEnv, f!.resp)
+        length(kerr_resps) == 1 || return false
+        if isempty(raman_resps)
+            length(f!.resp) == 1 || return false
+        else
+            # Plan 16 is deliberately narrower than the mode-averaged and
+            # radial Raman contracts: RealGrid scalar SDO only. This excludes
+            # EnvGrid Raman, npol=2, mixtures, plasma/noise, intermediate
+            # broadening, and all unsupported response families.
+            is_real_grid || return false
+            f!.ts.npol == 1 || return false
+            length(raman_resps) == 1 || return false
+            length(f!.resp) == 2 || return false
+            raman = raman_resps[1]
+            raman isa Amalthea.Nonlinear.RamanPolarField || return false
+            rr = raman.r
+            rr isa Amalthea.Raman.CombinedRamanResponse || return false
+            Rs = Amalthea.Raman.flatten_sdo_oscillators(rr)
+            !isnothing(Rs) && !isempty(Rs) &&
+                length(Rs) <= _GPU_RAMAN_MAX_OSCILLATORS || return false
+        end
+        _modal_inner(m) =
+            m isa Amalthea.Capillary.MarcatiliMode ? m :
+            m isa Amalthea.Antiresonant.ZeisbergerMode ? m.m :
+            m isa Amalthea.Antiresonant.VincettiMode ? m.m : nothing
+        inner = _modal_inner.(f!.ts.ms)
+        all(!isnothing, inner) || return false
+        all(m -> m.kind in (:HE, :TE, :TM), inner) || return false
+        all(m -> m.a isa Number, inner) || return false
+        a = Float64(inner[1].a)
+        all(m -> Float64(m.a) == a, inner) || return false
+        return true
+    end
+
     (f! isa Amalthea.NonlinearRHS.TransModeAvg ||
      f! isa Amalthea.NonlinearRHS.TransRadial) || return false
     linop isa Array{ComplexF64} || return false
@@ -1061,21 +1165,38 @@ function _gpu_kernel_supports(f!, linop)
     f!.densityfun(0.0) isa Real || return false
     isnothing(f!.Et_noise) || return false
 
-    # Radial CUDA covers scalar Kerr on both grids, plus at most one PPT or
-    # thresholded ADK cumtrapz plasma response on RealGrid. EnvGrid plasma
-    # remains on the CPU-native path, and Raman/noise/mixtures stay rejected
-    # because their radial GPU kernels are not part of this support slice.
+    # Radial CUDA covers scalar Kerr on both grids, the Plan 10/11 RealGrid
+    # plasma slice, Plan 12 RealGrid SDO Raman, and Plan 13 EnvGrid SDO Raman.
+    # Noise, mixtures, EnvGrid plasma, and intermediate-broadening Raman remain
+    # on the CPU-native path because their radial GPU kernels are out of scope.
     if f! isa Amalthea.NonlinearRHS.TransRadial
         kerr_resps = filter(_is_plain_kerr_resp, f!.resp)
         plasma_resps = filter(r -> r isa Amalthea.Nonlinear.PlasmaCumtrapz, f!.resp)
+        raman_resps = filter(r -> r isa Amalthea.Nonlinear.RamanPolarField ||
+                              r isa Amalthea.Nonlinear.RamanPolarEnv, f!.resp)
         length(kerr_resps) == 1 || return false
         length(plasma_resps) <= 1 || return false
-        length(kerr_resps) + length(plasma_resps) == length(f!.resp) || return false
-        isempty(plasma_resps) && return true
-        is_real_grid || return false
-        ratefunc = plasma_resps[1].ratefunc
-        return ratefunc isa Amalthea.Ionisation.IonRatePPTAccel ||
-               (ratefunc isa Amalthea.Ionisation.IonRateADK && ratefunc.threshold)
+        length(raman_resps) <= 1 || return false
+        length(kerr_resps) + length(plasma_resps) + length(raman_resps) ==
+            length(f!.resp) || return false
+        if isempty(raman_resps)
+            isempty(plasma_resps) && return true
+            is_real_grid || return false
+            ratefunc = plasma_resps[1].ratefunc
+            return ratefunc isa Amalthea.Ionisation.IonRatePPTAccel ||
+                   (ratefunc isa Amalthea.Ionisation.IonRateADK && ratefunc.threshold)
+        end
+        # Plans 12/13 intentionally exclude plasma+Raman combinations: the
+        # radial CUDA contract admits either the existing Plan 10/11 plasma
+        # slice or one grid-matching SDO Raman slice, not both at once.
+        isempty(plasma_resps) || return false
+        raman = raman_resps[1]
+        (is_real_grid && raman isa Amalthea.Nonlinear.RamanPolarField) ||
+            (is_env_grid && raman isa Amalthea.Nonlinear.RamanPolarEnv) || return false
+        rr = raman.r
+        rr isa Amalthea.Raman.CombinedRamanResponse || return false
+        Rs = Amalthea.Raman.flatten_sdo_oscillators(rr)
+        return !isnothing(Rs) && !isempty(Rs) && length(Rs) <= _GPU_RAMAN_MAX_OSCILLATORS
     end
 
     f! isa Amalthea.NonlinearRHS.TransModeAvg || return false
@@ -1271,9 +1392,17 @@ function _gpu_native_eligible(f!, linop, n::Integer)
     _gpu_kernel_supports(f!, linop) || return false
     cfg.gpu_dispatch === :off && return false
     cfg.gpu_dispatch === :on && return true
+    # Plans 14-15 are correctness-validated but have no retained production-shaped
+    # callback/transfer threshold. Keep modal CUDA opt-in under `:on` until a
+    # representative sweep establishes the adaptive-cubature break-even.
+    f! isa Amalthea.NonlinearRHS.TransModal && return false
     # No measured radial automatic-dispatch threshold exists yet. Explicit
     # `:on` is the Plan 08 policy; `:auto` keeps the CPU-native radial path.
     f! isa Amalthea.NonlinearRHS.TransRadial && return false
+    # Plans 17-21's joint 3-D free-space paths are correctness-validated but
+    # have no retained production threshold. Keep them explicit-only until a
+    # dedicated non-square-grid sweep establishes a stable crossover.
+    f! isa Amalthea.NonlinearRHS.TransFree && return false
     if any(r -> r isa Amalthea.Nonlinear.RamanPolarField ||
                r isa Amalthea.Nonlinear.RamanPolarEnv, f!.resp)
         threshold = _gpu_raman_auto_threshold(f!)
@@ -1920,12 +2049,11 @@ function RustNativeStepper(f!, linop, y0, t, dt;
         end
     end
 
-    # Set parameters if modal (TransModal) — Phase 5 gate: RealGrid,
-    # `full=false` only (the radial modal integral — this is exactly what
-    # `Interface.needfull` selects for `HE, n=1` mode collections, i.e. the
-    # common case, not an artificial restriction), constant-radius Marcatili
-    # `kind=:HE, n=1` modes only, Kerr-only. See MATH.md §3.3 for the design
-    # (libcubature reuse, closed-form N(m), the numerically-probed norm!).
+    # Set parameters if modal (TransModal): Plans 14-15 cover constant-radius
+    # Marcatili/Zeisberger/Vincetti `kind ∈ (:HE,:TE,:TM)` collections, both
+    # cubature branches, RealGrid/EnvGrid, npol=1|2, and scalar Kerr. The
+    # existing RealGrid SDO Raman extension is also retained for its narrower
+    # npol=1 branch. See MATH.md §3.3 and the feature plans for the design.
     if is_modal
         # Phase E.4 item 5: EnvGrid modal. native.rs's `rhs_modal_pointcalc`
         # now branches on `sim.is_real` (already set generically above, via
@@ -2062,10 +2190,9 @@ function RustNativeStepper(f!, linop, y0, t, dt;
             end
         else
             γ3 = Amalthea.Nonlinear.kerr_γ3(f!.resp)
-            # Phase 5 gate is Kerr-only; Phase D.4 (docs/dev/BACKLOG.md) adds Raman
-            # (RealGrid, npol=1, either `thg` value since Phase F.1 — same
-            # per-node scalar-field scope as Kerr here) alongside it. Any other
-            # response type remains ineligible.
+            # Plans 14-15 cover scalar Kerr on RealGrid/EnvGrid. Plan 16 adds
+            # supported scalar SDO Raman only for RealGrid, npol=1, and
+            # either `thg` value; any other response type remains ineligible.
             is_kerr_resp_modal(r) = _is_plain_kerr_resp(r)
             for r in f!.resp
                 is_kerr_resp_modal(r) || r isa Amalthea.Nonlinear.RamanPolarField ||
@@ -2073,18 +2200,14 @@ function RustNativeStepper(f!, linop, y0, t, dt;
                           "responses are supported by the native path " *
                           "(Phase D.4 gate) — this also rejects Kerr_field_nothg/" *
                           "Kerr_env_thg, see `_is_plain_kerr_resp`."))
-                # native.rs's inline Raman ADE solve only ever touches modal
-                # polarisation column 0 (`rhs_modal_pointcalc`'s "npol=1 scalar
-                # field only" Raman block) — with npol=2 it would silently drop
-                # the second (y) column's Raman contribution instead of raising.
+                # The CUDA modal Raman batch owns one series per node, and the
+                # supported scalar contract intentionally excludes npol=2.
                 r isa Amalthea.Nonlinear.RamanPolarField && npol != 1 &&
                     throw(NativeIneligible("modal: Raman (RamanPolarField) is only " *
                           "supported natively for npol=1 — native.rs's inline " *
                           "solver does not yet handle a second polarisation column."))
-                # native.rs's inline Raman ADE solve operates on real time-domain
-                # buffers only (`modal_er`/`modal_pr`) — EnvGrid modal (Phase E.4
-                # item 5) uses complex buffers (`modal_er_c`/`modal_pr_c`) with no
-                # Raman wiring at all.
+                # The CUDA Plan 16 Raman pipeline operates on RealGrid's real
+                # time-domain buffers; EnvGrid modal Raman remains excluded.
                 r isa Amalthea.Nonlinear.RamanPolarField && !is_real_grid &&
                     throw(NativeIneligible("modal: Raman (RamanPolarField) is only " *
                           "supported natively for RealGrid — native.rs has no EnvGrid " *
@@ -2138,17 +2261,13 @@ function RustNativeStepper(f!, linop, y0, t, dt;
             check_ffi(rc, "native_set_modal_zdep_params"; ineligible=true)
         end
 
-        # Wire Raman if present and eligible — Phase D.4 (docs/dev/BACKLOG.md), both
+        # Wire Raman if present and eligible — Plan 16, both
         # `thg` values since Phase F.1, rotational multi-oscillator and
         # density-dependent τ2 since Phase F.2 (see the mode-averaged wiring
-        # above for the full rationale — identical here). Same FFI call as
-        # mode-averaged/radial above; `native_set_raman_params` sizes its
-        # scratch buffers as `n_time_over` (the `else` branch — modal is
-        # neither mode-averaged nor radial, and `rhs_modal_pointcalc` reuses
-        # one shared buffer sequentially across quadrature nodes, exactly
-        # like mode-averaged's single per-call buffer — see native.rs's
-        # `apply_raman_radial` doc for why the same solver instance is safe
-        # to reuse this way). Mixtures are Kerr-only by construction
+        # above for the full rationale — identical here). The native setter
+        # detects the committed modal configuration and sizes dedicated
+        # Raman scratch as one series per callback batch node, so callbacks do
+        # not reuse a single ADE buffer across nodes. Mixtures are Kerr-only by construction
         # (validated above), so this loop is skipped entirely for them.
         for r in (is_mixture ? () : f!.resp)
             if r isa Amalthea.Nonlinear.RamanPolarField

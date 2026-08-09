@@ -98,16 +98,16 @@ repairs at the head of this queue.
 | 9 | `LUNA_FEATURE_PLAN_09_GPU_RADIAL_ENV_KERR.md` | radial EnvGrid Kerr (complete 2026-08-02) | 08 |
 | 10 | `LUNA_FEATURE_PLAN_10_GPU_RADIAL_PPT.md` | radial RealGrid PPT plasma (complete 2026-08-02) | 08 |
 | 11 | `LUNA_FEATURE_PLAN_11_GPU_RADIAL_ADK.md` | radial RealGrid thresholded ADK (complete 2026-08-02) | 10 |
-| 12 | `LUNA_FEATURE_PLAN_12_GPU_RADIAL_REAL_RAMAN.md` | radial RealGrid SDO Raman | 02, 08 |
-| 13 | `LUNA_FEATURE_PLAN_13_GPU_RADIAL_ENV_RAMAN.md` | radial EnvGrid SDO Raman | 09, 12 |
-| 14 | `LUNA_FEATURE_PLAN_14_GPU_MODAL_REAL_KERR.md` | modal RealGrid Kerr | 03, preferably 06 |
-| 15 | `LUNA_FEATURE_PLAN_15_GPU_MODAL_ENV_KERR.md` | modal EnvGrid Kerr | 14 |
-| 16 | `LUNA_FEATURE_PLAN_16_GPU_MODAL_REAL_RAMAN.md` | modal RealGrid scalar SDO Raman | 02, 14 |
-| 17 | `LUNA_FEATURE_PLAN_17_GPU_FREE_REAL_KERR.md` | free-space RealGrid Kerr | 03, preferably 06 |
-| 18 | `LUNA_FEATURE_PLAN_18_GPU_FREE_ENV_KERR.md` | free-space EnvGrid Kerr | 17 |
-| 19 | `LUNA_FEATURE_PLAN_19_GPU_FREE_PPT.md` | free-space RealGrid PPT plasma | 17 |
-| 20 | `LUNA_FEATURE_PLAN_20_GPU_FREE_ADK.md` | free-space RealGrid thresholded ADK | 19 |
-| 21 | `LUNA_FEATURE_PLAN_21_GPU_FREE_REAL_RAMAN.md` | free-space RealGrid SDO Raman | 02, 17 |
+| 12 | `LUNA_FEATURE_PLAN_12_GPU_RADIAL_REAL_RAMAN.md` | radial RealGrid SDO Raman (complete 2026-08-04) | 02, 08 |
+| 13 | `LUNA_FEATURE_PLAN_13_GPU_RADIAL_ENV_RAMAN.md` | radial EnvGrid SDO Raman (complete 2026-08-04) | 09, 12 |
+| 14 | `LUNA_FEATURE_PLAN_14_GPU_MODAL_REAL_KERR.md` | modal RealGrid Kerr (complete 2026-08-04) | 03, preferably 06 |
+| 15 | `LUNA_FEATURE_PLAN_15_GPU_MODAL_ENV_KERR.md` | modal EnvGrid Kerr (complete 2026-08-08) | 14 |
+| 16 | `LUNA_FEATURE_PLAN_16_GPU_MODAL_REAL_RAMAN.md` | modal RealGrid scalar SDO Raman (complete 2026-08-08) | 02, 14 |
+| 17 | `LUNA_FEATURE_PLAN_17_GPU_FREE_REAL_KERR.md` | free-space RealGrid Kerr (complete 2026-08-08) | 03, preferably 06 |
+| 18 | `LUNA_FEATURE_PLAN_18_GPU_FREE_ENV_KERR.md` | free-space EnvGrid Kerr (complete 2026-08-08) | 17 |
+| 19 | `LUNA_FEATURE_PLAN_19_GPU_FREE_PPT.md` | free-space RealGrid PPT plasma (complete 2026-08-08) | 17 |
+| 20 | `LUNA_FEATURE_PLAN_20_GPU_FREE_ADK.md` | free-space RealGrid thresholded ADK (complete 2026-08-08) | 19 |
+| 21 | `LUNA_FEATURE_PLAN_21_GPU_FREE_REAL_RAMAN.md` | free-space RealGrid SDO Raman (complete 2026-08-09) | 02, 17 |
 
 Plans 08-21 deliberately leave each new geometry on
 `AMALTHEA_NATIVE_GPU=on`. Automatic dispatch is a separate measured feature,

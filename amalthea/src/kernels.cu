@@ -90,14 +90,21 @@ extern "C" __global__ void raman_hilbert_pack_kernel(
 
 extern "C" __global__ void raman_hilbert_filter_kernel(
     cuDoubleComplex* spectrum,
-    int n
+    int n,
+    int n_series
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= n) return;
+    int total = n * n_series;
+    if (idx >= total) return;
+    // Radial Raman stores one contiguous transform per column.  Apply the
+    // analytic-signal parity mask to the local frequency index, not to the
+    // flattened global index (which would corrupt every column after the
+    // first).
+    int local = idx % n;
     int half = n / 2;
-    if (idx == 0 || (n % 2 == 0 && idx == half)) {
+    if (local == 0 || (n % 2 == 0 && local == half)) {
         // DC and (for even n) Nyquist remain single-weighted.
-    } else if (idx <= half) {
+    } else if (local <= half) {
         spectrum[idx].x *= 2.0;
         spectrum[idx].y *= 2.0;
     } else {
@@ -396,6 +403,400 @@ extern "C" __global__ void rhs_mode_avg_real_kernel(
     pto[idx] = kerr_fac * e * e * e;
 }
 
+// Modal RealGrid kernels.  A batch series is laid out column-major as
+// `series*n_time_over + t`, where `series = node*npol + polarization`.
+// The mode spectrum itself remains resident in the RK stage buffer; only the
+// small cubature coordinate and output batches cross the host/device seam.
+
+__device__ double modal_j0(double x) {
+    double ax = fabs(x);
+    if (ax < 8.0) {
+        double y = x * x / 4.0;
+        double term = 1.0;
+        double sum = 1.0;
+        for (int i = 1; i < 25; ++i) {
+            double fi = (double)i;
+            term *= -y / (fi * fi);
+            sum += term;
+            if (fabs(term) < 1e-16) break;
+        }
+        return sum;
+    }
+    double z = ax;
+    double chi = z - 0.7853981633974483096156608458198757;
+    return sqrt(2.0 / (3.1415926535897932384626433832795029 * z)) *
+           (cos(chi) + 0.125 * sin(chi) / z);
+}
+
+__device__ double modal_j1(double x) {
+    double ax = fabs(x);
+    if (ax < 8.0) {
+        double y = x * x / 4.0;
+        double term = 0.5 * x;
+        double sum = term;
+        for (int i = 1; i < 25; ++i) {
+            double fi = (double)i;
+            term *= -y / (fi * (fi + 1.0));
+            sum += term;
+            if (fabs(term) < 1e-16) break;
+        }
+        return sum;
+    }
+    double z = ax;
+    double chi = z - 2.3561944901923449288469825374596272;
+    double sign = x < 0.0 ? -1.0 : 1.0;
+    return sign * sqrt(2.0 / (3.1415926535897932384626433832795029 * z)) *
+           (cos(chi) - 0.375 * sin(chi) / z);
+}
+
+// Integer-order J_n matching diffraction.rs::jn: J0/J1 use their dedicated
+// branches and higher orders use a downward Miller recurrence with the same
+// normalization identity.  Modal radii and unm are nonnegative, but retaining
+// the sign rules makes the helper's contract explicit and useful for tests.
+__device__ double modal_jn(int order, double x) {
+    if (order < 0) {
+        double v = modal_jn(-order, x);
+        return (order % 2 == 0) ? v : -v;
+    }
+    if (x < 0.0) {
+        double v = modal_jn(order, -x);
+        return (order % 2 == 0) ? v : -v;
+    }
+    if (order == 0) return modal_j0(x);
+    if (order == 1) return modal_j1(x);
+    if (x == 0.0) return 0.0;
+
+    double base = order > x ? (double)order : x;
+    int m = (int)base + 15 + (int)sqrt(40.0 * base);
+    if (m & 1) ++m;
+    double jkp1 = 0.0;
+    double jk = 1.0e-30;
+    double result = 0.0;
+    double sum = 0.0;
+    for (int k = m; k >= 1; --k) {
+        double jkm1 = (2.0 * (double)k / x) * jk - jkp1;
+        if (k - 1 == order) result = jkm1;
+        if (((k - 1) & 1) == 0) {
+            sum += (k - 1 == 0) ? jkm1 : 2.0 * jkm1;
+        }
+        jkp1 = jk;
+        jk = jkm1;
+        if (fabs(jk) > 1.0e250) {
+            jkp1 /= 1.0e250;
+            jk /= 1.0e250;
+            result /= 1.0e250;
+            sum /= 1.0e250;
+        }
+    }
+    return result / sum;
+}
+
+__device__ void modal_angle_xy(
+    int kind, int order, double phi, double theta, double* ax, double* ay
+) {
+    if (kind == 1) {
+        *ax = -sin(theta);
+        *ay = cos(theta);
+    } else if (kind == 2) {
+        *ax = cos(theta);
+        *ay = sin(theta);
+    } else {
+        double n = (double)(order + 1);
+        double arg = n * (theta + phi);
+        *ax = cos(theta) * sin(arg) - sin(theta) * cos(arg);
+        *ay = sin(theta) * sin(arg) + cos(theta) * cos(arg);
+    }
+}
+
+// Shared modal synthesis. RealGrid retains its contiguous r2c half-spectrum;
+// EnvGrid moves the upper c2c half to the end of the oversampled series and
+// zeros the middle, matching native.rs::modal_pointcalc.
+extern "C" __global__ void modal_synthesize_real_kernel(
+    const cuDoubleComplex* modal_field,
+    cuDoubleComplex* field_over,
+    const double* node_r,
+    const double* node_theta,
+    const double* unm,
+    const double* inv_sqrt_n,
+    const int* order,
+    const unsigned char* kind,
+    const double* phi,
+    const unsigned char* pol_select,
+    double scale_fwd,
+    double radius,
+    int n_spec,
+    int n_spec_over,
+    int n_modes,
+    int npol,
+    int n_nodes,
+    int is_real
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n_spec_over * npol * n_nodes;
+    if (idx >= total) return;
+    int i = idx % n_spec_over;
+    int series = idx / n_spec_over;
+    int node = series / npol;
+    int pol = series - node * npol;
+    int src_i = -1;
+    if (is_real) {
+        if (i < n_spec) src_i = i;
+    } else {
+        int half = n_spec / 2;
+        if (i < half) {
+            src_i = i;
+        } else if (i >= n_spec_over - half) {
+            src_i = n_spec - half + i - (n_spec_over - half);
+        }
+    }
+    if (src_i < 0) {
+        field_over[idx] = make_cuDoubleComplex(0.0, 0.0);
+        return;
+    }
+    double r = node_r[node];
+    double theta = node_theta[node];
+    if (r <= 0.0 || r >= radius) {
+        field_over[idx] = make_cuDoubleComplex(0.0, 0.0);
+        return;
+    }
+    double sum_re = 0.0;
+    double sum_im = 0.0;
+    for (int m = 0; m < n_modes; ++m) {
+        double x = r * unm[m] / radius;
+        double base = modal_jn(order[m], x) * inv_sqrt_n[m];
+        double ax, ay;
+        modal_angle_xy((int)kind[m], order[m], phi[m], theta, &ax, &ay);
+        double coeff = pol_select[pol] == 0 ? ax : ay;
+        cuDoubleComplex v = modal_field[m * n_spec + src_i];
+        sum_re += v.x * base * coeff;
+        sum_im += v.y * base * coeff;
+    }
+    field_over[idx] = make_cuDoubleComplex(sum_re * scale_fwd, sum_im * scale_fwd);
+}
+
+extern "C" __global__ void modal_kerr_real_kernel(
+    double* polarization, const double* field, double kerr_fac,
+    int n_time, int npol, int n_nodes
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n_time * npol * n_nodes;
+    if (idx >= total) return;
+    int t = idx % n_time;
+    int series = idx / n_time;
+    int node = series / npol;
+    int pol = series - node * npol;
+    if (npol == 1) {
+        double e = field[series * n_time + t];
+        polarization[idx] = kerr_fac * e * e * e;
+    } else {
+        double ex = field[(node * npol + 0) * n_time + t];
+        double ey = field[(node * npol + 1) * n_time + t];
+        double sq = ex * ex + ey * ey;
+        double e = pol == 0 ? ex : ey;
+        polarization[idx] = kerr_fac * sq * e;
+    }
+}
+
+// Modal EnvGrid envelope Kerr.  The vector branch is the exact
+// KerrVectorEnv! formula from src/Nonlinear.jl, including the 2/3 and 1/3
+// cross-polarisation terms.  The input/output series use the same
+// `node*npol + pol` column-major layout as the RealGrid modal kernels, but
+// each sample is a cuDoubleComplex rather than a real scalar.
+extern "C" __global__ void modal_kerr_env_kernel(
+    cuDoubleComplex* polarization, const cuDoubleComplex* field,
+    double kerr_fac, int n_time, int npol, int n_nodes
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n_time * npol * n_nodes;
+    if (idx >= total) return;
+    int t = idx % n_time;
+    int series = idx / n_time;
+    int node = series / npol;
+    int pol = series - node * npol;
+    double fac = 0.75 * kerr_fac;
+    if (npol == 1) {
+        cuDoubleComplex e = field[series * n_time + t];
+        double mag_sq = e.x * e.x + e.y * e.y;
+        polarization[idx] = make_cuDoubleComplex(
+            fac * mag_sq * e.x, fac * mag_sq * e.y);
+        return;
+    }
+
+    cuDoubleComplex ex = field[(node * npol + 0) * n_time + t];
+    cuDoubleComplex ey = field[(node * npol + 1) * n_time + t];
+    double ex2 = ex.x * ex.x + ex.y * ex.y;
+    double ey2 = ey.x * ey.x + ey.y * ey.y;
+    cuDoubleComplex out;
+    if (pol == 0) {
+        // conj(Ex) * Ey^2
+        cuDoubleComplex ey_sq = make_cuDoubleComplex(
+            ey.x * ey.x - ey.y * ey.y, 2.0 * ey.x * ey.y);
+        cuDoubleComplex cross = make_cuDoubleComplex(
+            ex.x * ey_sq.x + ex.y * ey_sq.y,
+            ex.x * ey_sq.y - ex.y * ey_sq.x);
+        double main = ex2 + (2.0 / 3.0) * ey2;
+        out = make_cuDoubleComplex(main * ex.x + cross.x / 3.0,
+                                   main * ex.y + cross.y / 3.0);
+    } else {
+        // conj(Ey) * Ex^2
+        cuDoubleComplex ex_sq = make_cuDoubleComplex(
+            ex.x * ex.x - ex.y * ex.y, 2.0 * ex.x * ex.y);
+        cuDoubleComplex cross = make_cuDoubleComplex(
+            ey.x * ex_sq.x + ey.y * ex_sq.y,
+            ey.x * ex_sq.y - ey.y * ex_sq.x);
+        double main = ey2 + (2.0 / 3.0) * ex2;
+        out = make_cuDoubleComplex(main * ey.x + cross.x / 3.0,
+                                   main * ey.y + cross.y / 3.0);
+    }
+    polarization[idx] = make_cuDoubleComplex(fac * out.x, fac * out.y);
+}
+
+extern "C" __global__ void modal_apply_window_kernel(
+    double* polarization, const double* towin, int n_time, int npol, int n_nodes
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n_time * npol * n_nodes;
+    if (idx >= total) return;
+    polarization[idx] *= towin[idx % n_time];
+}
+
+extern "C" __global__ void modal_apply_window_complex_kernel(
+    cuDoubleComplex* polarization, const double* towin,
+    int n_time, int npol, int n_nodes
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int total = n_time * npol * n_nodes;
+    if (idx >= total) return;
+    double w = towin[idx % n_time];
+    polarization[idx].x *= w;
+    polarization[idx].y *= w;
+}
+
+extern "C" __global__ void modal_project_real_kernel(
+    const cuDoubleComplex* polarization_over,
+    double* output,
+    const double* node_r,
+    const double* node_theta,
+    const double* unm,
+    const double* inv_sqrt_n,
+    const int* order,
+    const unsigned char* kind,
+    const double* phi,
+    const unsigned char* pol_select,
+    const cuDoubleComplex* nlfac,
+    double radius,
+    double scale_inv,
+    int full,
+    int n_spec,
+    int n_spec_over,
+    int n_modes,
+    int npol,
+    int n_nodes
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int per_node = n_spec * n_modes;
+    int total = per_node * n_nodes;
+    if (idx >= total) return;
+    int node = idx / per_node;
+    int rem = idx - node * per_node;
+    int mode = rem / n_spec;
+    int i = rem - mode * n_spec;
+    double r = node_r[node];
+    double theta = node_theta[node];
+    int out_idx = node * (2 * per_node) + 2 * rem;
+    if (r <= 0.0 || r >= radius) {
+        output[out_idx] = 0.0;
+        output[out_idx + 1] = 0.0;
+        return;
+    }
+    double x = r * unm[mode] / radius;
+    double base = modal_jn(order[mode], x) * inv_sqrt_n[mode];
+    double ax, ay;
+    modal_angle_xy((int)kind[mode], order[mode], phi[mode], theta, &ax, &ay);
+    double jac = full ? r : 2.0 * 3.1415926535897932384626433832795029 * r;
+    double sum_re = 0.0;
+    double sum_im = 0.0;
+    for (int pol = 0; pol < npol; ++pol) {
+        double coeff = pol_select[pol] == 0 ? ax : ay;
+        cuDoubleComplex v = polarization_over[(node * npol + pol) * n_spec_over + i];
+        v.x *= scale_inv;
+        v.y *= scale_inv;
+        cuDoubleComplex nf = nlfac[i];
+        double re = v.x * nf.x - v.y * nf.y;
+        double im = v.x * nf.y + v.y * nf.x;
+        sum_re += re * coeff;
+        sum_im += im * coeff;
+    }
+    output[out_idx] = jac * base * sum_re;
+    output[out_idx + 1] = jac * base * sum_im;
+}
+
+// EnvGrid modal projection.  Unlike the RealGrid r2c output, the c2c
+// spectrum retains both low and high halves.  Crop the same halves that the
+// CPU modal EnvGrid path (`native.rs::modal_pointcalc`) copies back to the
+// ODE state, then apply the shared nlfac and modal projection contract.
+extern "C" __global__ void modal_project_env_kernel(
+    const cuDoubleComplex* polarization_over,
+    double* output,
+    const double* node_r,
+    const double* node_theta,
+    const double* unm,
+    const double* inv_sqrt_n,
+    const int* order,
+    const unsigned char* kind,
+    const double* phi,
+    const unsigned char* pol_select,
+    const cuDoubleComplex* nlfac,
+    double radius,
+    double scale_inv,
+    int full,
+    int n_spec,
+    int n_spec_over,
+    int n_modes,
+    int npol,
+    int n_nodes
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int per_node = n_spec * n_modes;
+    int total = per_node * n_nodes;
+    if (idx >= total) return;
+    int node = idx / per_node;
+    int rem = idx - node * per_node;
+    int mode = rem / n_spec;
+    int i = rem - mode * n_spec;
+    double r = node_r[node];
+    double theta = node_theta[node];
+    int out_idx = node * (2 * per_node) + 2 * rem;
+    if (r <= 0.0 || r >= radius) {
+        output[out_idx] = 0.0;
+        output[out_idx + 1] = 0.0;
+        return;
+    }
+    double x = r * unm[mode] / radius;
+    double base = modal_jn(order[mode], x) * inv_sqrt_n[mode];
+    double ax, ay;
+    modal_angle_xy((int)kind[mode], order[mode], phi[mode], theta, &ax, &ay);
+    double jac = full ? r : 2.0 * 3.1415926535897932384626433832795029 * r;
+    int half = n_spec / 2;
+    double sum_re = 0.0;
+    double sum_im = 0.0;
+    for (int pol = 0; pol < npol; ++pol) {
+        int src_i = i < half ? i : n_spec_over - half + i - (n_spec - half);
+        cuDoubleComplex v = polarization_over[
+            (node * npol + pol) * n_spec_over + src_i];
+        v.x *= scale_inv;
+        v.y *= scale_inv;
+        cuDoubleComplex nf = nlfac[i];
+        double re = v.x * nf.x - v.y * nf.y;
+        double im = v.x * nf.y + v.y * nf.x;
+        double coeff = pol_select[pol] == 0 ? ax : ay;
+        sum_re += re * coeff;
+        sum_im += im * coeff;
+    }
+    output[out_idx] = jac * base * sum_re;
+    output[out_idx + 1] = jac * base * sum_im;
+}
+
 // Time-domain window apodization: Pto *= towin. Split out from
 // rhs_mode_avg_real_kernel so it can run once, after Kerr AND plasma have
 // both contributed to `pto` — reproduces native.rs's Step 4 (applied to the
@@ -569,7 +970,7 @@ extern "C" __global__ void finalize_radial_spectrum_kernel(
     ks_out[idx] = make_cuDoubleComplex(re, im);
 }
 
-// EnvGrid finalizer: retain the full c2c spectrum after the oversampled
+// EnvGrid finalizer: retain both c2c spectral halves after the oversampled
 // forward transform, apply the temporal crop scale, then multiply Julia's
 // transferred complex normalization M for each (frequency, radial) entry.
 extern "C" __global__ void finalize_radial_spectrum_env_kernel(
@@ -586,7 +987,9 @@ extern "C" __global__ void finalize_radial_spectrum_env_kernel(
     if (idx >= total) return;
     int i = idx % n_spec;
     int r = idx / n_spec;
-    cuDoubleComplex v = poo[r * n_spec_over + i];
+    int half = n_spec / 2;
+    int src_i = i < half ? i : n_spec_over - half + i - (n_spec - half);
+    cuDoubleComplex v = poo[r * n_spec_over + src_i];
     cuDoubleComplex m = norm[idx];
     double re = (v.x * scale_inv) * m.x - (v.y * scale_inv) * m.y;
     double im = (v.x * scale_inv) * m.y + (v.y * scale_inv) * m.x;
@@ -787,19 +1190,19 @@ extern "C" __global__ void plasma_polarization_finalize_kernel(
     pto[idx] += density * (polarization_prefix[idx] + offset);
 }
 
-// Radial RealGrid plasma counterparts.  A radial field is laid out as
-// `n_time` contiguous samples for each of `n_r` columns.  The scan launch
-// flattens `(column, block)` into one grid dimension, while every finalizer
-// reconstructs the column-local block offset.  Consequently no prefix ever
-// crosses a radial boundary, even when a column spans several blocks and the
-// final block is partial.
-extern "C" __global__ void plasma_scan_radial_blocks_kernel(
+// Segmented RealGrid plasma counterparts.  A field is laid out as `n_time`
+// contiguous samples for each of `n_series` independent columns (radial or
+// free-space `(y,x)`).  The scan launch flattens `(series, block)` into one
+// grid dimension, while every finalizer reconstructs the series-local block
+// offset. Consequently no prefix crosses a series boundary, even when a
+// series spans several blocks and the final block is partial.
+extern "C" __global__ void plasma_scan_series_blocks_kernel(
     const double* input,
     double* local_prefix,
     double* block_sums,
     double dt,
     int n_time,
-    int n_r,
+    int n_series,
     int n_blocks
 ) {
     extern __shared__ double temp[];
@@ -807,7 +1210,7 @@ extern "C" __global__ void plasma_scan_radial_blocks_kernel(
     int flat_block = blockIdx.x;
     int column = flat_block / n_blocks;
     int scan_block = flat_block - column * n_blocks;
-    if (column >= n_r) return;
+    if (column >= n_series) return;
     int local_idx = scan_block * blockDim.x + tid;
     int idx = column * n_time + local_idx;
 
@@ -856,16 +1259,16 @@ __device__ inline double plasma_radial_block_offset(
     return offset;
 }
 
-extern "C" __global__ void plasma_fraction_radial_finalize_kernel(
+extern "C" __global__ void plasma_fraction_series_finalize_kernel(
     double* fraction,
     const double* block_sums,
     double preionfrac,
     int n_time,
-    int n_r,
+    int n_series,
     int n_blocks
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = n_time * n_r;
+    int total = n_time * n_series;
     if (idx >= total) return;
     int column = idx / n_time;
     int local_idx = idx - column * n_time;
@@ -875,7 +1278,7 @@ extern "C" __global__ void plasma_fraction_radial_finalize_kernel(
     fraction[idx] = preionfrac + 1.0 - exp(-acc);
 }
 
-extern "C" __global__ void plasma_phase_radial_kernel(
+extern "C" __global__ void plasma_phase_series_kernel(
     const double* fraction,
     const double* eto,
     double e_ratio,
@@ -887,7 +1290,7 @@ extern "C" __global__ void plasma_phase_radial_kernel(
     phase[idx] = fraction[idx] * e_ratio * eto[idx];
 }
 
-extern "C" __global__ void plasma_current_radial_finalize_kernel(
+extern "C" __global__ void plasma_current_series_finalize_kernel(
     double* current,
     const double* block_sums,
     const double* rate,
@@ -895,11 +1298,11 @@ extern "C" __global__ void plasma_current_radial_finalize_kernel(
     const double* eto,
     double ionpot,
     int n_time,
-    int n_r,
+    int n_series,
     int n_blocks
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = n_time * n_r;
+    int total = n_time * n_series;
     if (idx >= total) return;
     int column = idx / n_time;
     int local_idx = idx - column * n_time;
@@ -913,17 +1316,17 @@ extern "C" __global__ void plasma_current_radial_finalize_kernel(
     current[idx] += offset + loss;
 }
 
-extern "C" __global__ void plasma_polarization_radial_finalize_kernel(
+extern "C" __global__ void plasma_polarization_series_finalize_kernel(
     const double* polarization_prefix,
     const double* block_sums,
     double* pto,
     double density,
     int n_time,
-    int n_r,
+    int n_series,
     int n_blocks
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int total = n_time * n_r;
+    int total = n_time * n_series;
     if (idx >= total) return;
     int column = idx / n_time;
     int local_idx = idx - column * n_time;

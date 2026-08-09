@@ -3417,6 +3417,23 @@ pub trait NativeBackend {
         out_dens: *mut c_double,
         out_beta1: *mut c_double,
     ) -> i32;
+    /// Evaluate the configured modal point evaluator at caller-supplied
+    /// nodes. This is a diagnostics/verification seam for the CUDA modal
+    /// backend; CPU and unsupported backends return `-1`.
+    unsafe fn debug_modal_eval_nodes(
+        &mut self,
+        _coords: *const c_double,
+        _npt: size_t,
+        _out: *mut c_double,
+        _out_len: size_t,
+    ) -> i32 {
+        -1
+    }
+    /// Copy modal CUDA callback counters as
+    /// `[device_batches, host_to_device_bytes, device_to_host_bytes]`.
+    unsafe fn debug_modal_stats(&self, _out: *mut size_t, _n: size_t) -> i32 {
+        -1
+    }
     unsafe fn set_fftw_plans(
         &mut self,
         lib_path: *const c_char,
@@ -3861,6 +3878,31 @@ impl NativeBackend for CpuNativeSim {
         unsafe {
             *out_dens = dens;
             *out_beta1 = beta1;
+        }
+        0
+    }
+    unsafe fn debug_modal_eval_nodes(
+        &mut self,
+        coords: *const c_double,
+        npt: size_t,
+        out: *mut c_double,
+        out_len: size_t,
+    ) -> i32 {
+        if coords.is_null() || out.is_null() || npt == 0 {
+            return -1;
+        }
+        let fdim = self.n_spec * self.n_modes * 2;
+        if out_len != npt.saturating_mul(fdim) {
+            return -1;
+        }
+        if self.modal_full {
+            let xs = unsafe { std::slice::from_raw_parts(coords, npt * 2) };
+            let dst = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
+            self.modal_eval_batch_2d(xs, dst, fdim);
+        } else {
+            let xs = unsafe { std::slice::from_raw_parts(coords, npt) };
+            let dst = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
+            self.modal_eval_batch_1d(xs, dst, fdim);
         }
         0
     }
@@ -5258,8 +5300,12 @@ impl NativeBackend for CpuNativeSim {
 /// EnvGrid Kerr and SDO Raman matching the grid
 /// (`RamanPolarField`/`RamanPolarEnv`), plus mode-averaged EnvGrid
 /// intermediate-broadening (`:SiO2`) Raman via resident r2c/c2r convolution,
-/// and optional PPT/thresholded-ADK plasma on RealGrid only. Other geometries
-/// and convolution-only Raman outside that EnvGrid path remain CPU-only (see
+/// optional PPT/thresholded-ADK plasma on RealGrid only, and the explicit
+/// radial RealGrid scalar-Kerr + one SDO `RamanPolarField` slice plus the
+/// radial EnvGrid scalar-Kerr + one SDO `RamanPolarEnv` slice, free-space
+/// RealGrid/EnvGrid scalar-Kerr slices, and free-space RealGrid scalar-Kerr
+/// plus one PPT or thresholded-ADK plasma slice. Other
+/// geometries and convolution-only Raman outside that EnvGrid path remain CPU-only (see
 /// `cuda_native.rs`'s `NativeBackend` impl). The supported Raman scope is
 /// verified against the CPU resident backend and Julia oracle on real CUDA
 /// hardware by the CUDA Raman test; everything outside it remains
@@ -5282,7 +5328,7 @@ pub unsafe extern "C" fn init_cuda_native_sim(linop: *const c_double, n: size_t)
     if std::env::var(CUDA_NATIVE_OPT_IN_VAR).as_deref() != Ok("1") {
         eprintln!(
             "Amalthea warning: GPU-resident stepper (CudaNativeSim) is experimental \
-             (mode-averaged RealGrid/EnvGrid Kerr + SDO Raman + EnvGrid :SiO2 Raman, with PPT/ADK plasma on RealGrid only) — refusing to initialize. \
+             (mode-averaged RealGrid/EnvGrid Kerr + SDO Raman + EnvGrid :SiO2 Raman, radial RealGrid/EnvGrid Kerr + matching SDO Raman, modal RealGrid/EnvGrid scalar Kerr, free-space RealGrid/EnvGrid scalar Kerr + free-space RealGrid PPT/thresholded ADK, with PPT/ADK plasma on RealGrid only) — refusing to initialize. \
              Set {}=1 to opt in (see \
              docs/dev/BACKLOG.md).",
             CUDA_NATIVE_OPT_IN_VAR
@@ -5291,7 +5337,7 @@ pub unsafe extern "C" fn init_cuda_native_sim(linop: *const c_double, n: size_t)
     }
     eprintln!(
         "Amalthea warning: {}=1 — using the GPU-resident stepper (mode-averaged RealGrid/EnvGrid \
-         Kerr + matching SDO Raman + EnvGrid :SiO2 Raman, with optional PPT/ADK plasma on RealGrid only; other geometry/physics is not \
+         Kerr + matching SDO Raman + EnvGrid :SiO2 Raman + explicit radial RealGrid/EnvGrid Kerr with matching SDO Raman + modal RealGrid/EnvGrid scalar Kerr + free-space RealGrid/EnvGrid scalar Kerr + free-space RealGrid PPT/thresholded ADK, with optional PPT/ADK plasma on RealGrid only; other geometry/physics is not \
          implemented, not just unverified).",
         CUDA_NATIVE_OPT_IN_VAR
     );
@@ -5583,6 +5629,40 @@ pub unsafe extern "C" fn native_debug_beta1_at(
     }
     let s = unsafe { &mut *sim };
     unsafe { s.backend.debug_beta1_at(z, out_dens, out_beta1) }
+}
+
+/// Evaluate the configured modal point evaluator at supplied nodes. For
+/// `full=false`, `coords` contains `npt` radii and the azimuth is fixed at
+/// zero; for `full=true`, it contains point-major `(r,theta)` pairs. This is
+/// intentionally diagnostic-only and returns `-1` for the CPU backend.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn native_debug_modal_eval_nodes(
+    sim: *mut NativeSim,
+    coords: *const c_double,
+    npt: size_t,
+    out: *mut c_double,
+    out_len: size_t,
+) -> i32 {
+    if sim.is_null() {
+        return -1;
+    }
+    let s = unsafe { &mut *sim };
+    unsafe { s.backend.debug_modal_eval_nodes(coords, npt, out, out_len) }
+}
+
+/// Copy CUDA modal callback traffic counters as
+/// `[device_batches, host_to_device_bytes, device_to_host_bytes]`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn native_debug_modal_stats(
+    sim: *mut NativeSim,
+    out: *mut size_t,
+    n: size_t,
+) -> i32 {
+    if sim.is_null() {
+        return -1;
+    }
+    let s = unsafe { &*sim };
+    unsafe { s.backend.debug_modal_stats(out, n) }
 }
 
 /// Create this sim's resident FFTW plans (`n_time`-point real or complex

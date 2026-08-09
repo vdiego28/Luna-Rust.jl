@@ -183,6 +183,13 @@ pub const CUFFT_INVERSE: libc::c_int = 1;
 
 pub struct CufftApi {
     _lib: Library,
+    pub cufftPlan3d: unsafe extern "C" fn(
+        plan: *mut cufftHandle,
+        nx: libc::c_int,
+        ny: libc::c_int,
+        nz: libc::c_int,
+        type_: cufftType,
+    ) -> cufftResult,
     pub cufftPlan1d: unsafe extern "C" fn(
         plan: *mut cufftHandle,
         nx: libc::c_int,
@@ -221,6 +228,7 @@ pub fn get_cufft_api() -> Result<&'static CufftApi, String> {
         ];
         let lib = Library::load(names)?;
         Ok(CufftApi {
+            cufftPlan3d: std::mem::transmute(lib.get_symbol("cufftPlan3d")?),
             cufftPlan1d: std::mem::transmute(lib.get_symbol("cufftPlan1d")?),
             cufftDestroy: std::mem::transmute(lib.get_symbol("cufftDestroy")?),
             cufftExecD2Z: std::mem::transmute(lib.get_symbol("cufftExecD2Z")?),
@@ -331,6 +339,13 @@ pub struct GpuContext {
     pub weaknorm_reduce_fn: CUfunction,
     pub rhs_mode_avg_real_fn: CUfunction,
     pub rhs_mode_avg_env_fn: CUfunction,
+    pub modal_synthesize_real_fn: CUfunction,
+    pub modal_kerr_real_fn: CUfunction,
+    pub modal_kerr_env_fn: CUfunction,
+    pub modal_apply_window_fn: CUfunction,
+    pub modal_apply_window_complex_fn: CUfunction,
+    pub modal_project_real_fn: CUfunction,
+    pub modal_project_env_fn: CUfunction,
     pub apply_time_window_fn: CUfunction,
     pub plasma_scan_blocks_fn: CUfunction,
     pub plasma_scan_block_sums_fn: CUfunction,
@@ -338,11 +353,11 @@ pub struct GpuContext {
     pub plasma_phase_fn: CUfunction,
     pub plasma_current_finalize_fn: CUfunction,
     pub plasma_polarization_finalize_fn: CUfunction,
-    pub plasma_scan_radial_blocks_fn: CUfunction,
-    pub plasma_fraction_radial_finalize_fn: CUfunction,
-    pub plasma_phase_radial_fn: CUfunction,
-    pub plasma_current_radial_finalize_fn: CUfunction,
-    pub plasma_polarization_radial_finalize_fn: CUfunction,
+    pub plasma_scan_series_blocks_fn: CUfunction,
+    pub plasma_fraction_series_finalize_fn: CUfunction,
+    pub plasma_phase_series_fn: CUfunction,
+    pub plasma_current_series_finalize_fn: CUfunction,
+    pub plasma_polarization_series_finalize_fn: CUfunction,
     /// Step 1 (zero-pad + scale spectrum into the oversampled buffer) —
     /// BACKLOG.md S3 item 0.
     pub expand_spectrum_fn: CUfunction,
@@ -592,6 +607,17 @@ pub fn init_gpu_context() -> Result<&'static GpuContext, String> {
                     return Err("cuModuleGetFunction rhs_mode_avg_env_kernel failed".to_string());
                 }
 
+                load_kernel!(modal_synthesize_real_fn, "modal_synthesize_real_kernel");
+                load_kernel!(modal_kerr_real_fn, "modal_kerr_real_kernel");
+                load_kernel!(modal_kerr_env_fn, "modal_kerr_env_kernel");
+                load_kernel!(modal_apply_window_fn, "modal_apply_window_kernel");
+                load_kernel!(
+                    modal_apply_window_complex_fn,
+                    "modal_apply_window_complex_kernel"
+                );
+                load_kernel!(modal_project_real_fn, "modal_project_real_kernel");
+                load_kernel!(modal_project_env_fn, "modal_project_env_kernel");
+
                 let mut apply_time_window_fn = std::ptr::null_mut();
                 res = (driver.cuModuleGetFunction)(
                     &mut apply_time_window_fn,
@@ -680,21 +706,21 @@ pub fn init_gpu_context() -> Result<&'static GpuContext, String> {
                 }
 
                 load_kernel!(
-                    plasma_scan_radial_blocks_fn,
-                    "plasma_scan_radial_blocks_kernel"
+                    plasma_scan_series_blocks_fn,
+                    "plasma_scan_series_blocks_kernel"
                 );
                 load_kernel!(
-                    plasma_fraction_radial_finalize_fn,
-                    "plasma_fraction_radial_finalize_kernel"
+                    plasma_fraction_series_finalize_fn,
+                    "plasma_fraction_series_finalize_kernel"
                 );
-                load_kernel!(plasma_phase_radial_fn, "plasma_phase_radial_kernel");
+                load_kernel!(plasma_phase_series_fn, "plasma_phase_series_kernel");
                 load_kernel!(
-                    plasma_current_radial_finalize_fn,
-                    "plasma_current_radial_finalize_kernel"
+                    plasma_current_series_finalize_fn,
+                    "plasma_current_series_finalize_kernel"
                 );
                 load_kernel!(
-                    plasma_polarization_radial_finalize_fn,
-                    "plasma_polarization_radial_finalize_kernel"
+                    plasma_polarization_series_finalize_fn,
+                    "plasma_polarization_series_finalize_kernel"
                 );
 
                 let mut expand_spectrum_fn = std::ptr::null_mut();
@@ -785,6 +811,13 @@ pub fn init_gpu_context() -> Result<&'static GpuContext, String> {
                     weaknorm_reduce_fn,
                     rhs_mode_avg_real_fn,
                     rhs_mode_avg_env_fn,
+                    modal_synthesize_real_fn,
+                    modal_kerr_real_fn,
+                    modal_kerr_env_fn,
+                    modal_apply_window_fn,
+                    modal_apply_window_complex_fn,
+                    modal_project_real_fn,
+                    modal_project_env_fn,
                     apply_time_window_fn,
                     plasma_scan_blocks_fn,
                     plasma_scan_block_sums_fn,
@@ -792,11 +825,11 @@ pub fn init_gpu_context() -> Result<&'static GpuContext, String> {
                     plasma_phase_fn,
                     plasma_current_finalize_fn,
                     plasma_polarization_finalize_fn,
-                    plasma_scan_radial_blocks_fn,
-                    plasma_fraction_radial_finalize_fn,
-                    plasma_phase_radial_fn,
-                    plasma_current_radial_finalize_fn,
-                    plasma_polarization_radial_finalize_fn,
+                    plasma_scan_series_blocks_fn,
+                    plasma_fraction_series_finalize_fn,
+                    plasma_phase_series_fn,
+                    plasma_current_series_finalize_fn,
+                    plasma_polarization_series_finalize_fn,
                     expand_spectrum_fn,
                     expand_radial_spectrum_fn,
                     expand_radial_spectrum_env_fn,
