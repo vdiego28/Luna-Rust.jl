@@ -340,7 +340,7 @@ together, unlike Phase 3's radial QDHT-plus-1-D-FFT). Per RHS
 ```
 copy_scale!(Eωo, Eωk, N, scale)     # zero-pad ω → oversampled, per (y,x) column
 ldiv!(Eto, FT, Eωo)                 # (ω,ky,kx) → (t,y,x), ONE joint 3-D transform
-Et_to_Pt!(Pto, Eto, resp, ρ, idcs)  # Kerr, pointwise over the whole (t,y,x) volume
+Et_to_Pt!(Pto, Eto, resp, ρ, idcs)  # Kerr, plus per-column plasma if present
 Pto .*= towin                       # per t, broadcast over (y,x)
 mul!(Pωo, FT, Pto)                  # (t,y,x) → (ω,ky,kx), ONE joint 3-D transform
 copy_scale!(nl, Pωo, N, 1/scale)    # truncate oversampled → base, per (y,x) column
@@ -402,10 +402,52 @@ one elementwise multiply, needing zero of `norm_free`'s `k_z`/evanescent
 masking logic ported.
 
 **Scope implemented:** RealGrid + `const_norm_free` (z-invariant normfun)
-only, scalar Kerr (reusing the exact `E³` formula already ported), the
-modified shot-noise branch (`Et_noise`/`Et_nl`) is **not** ported
-(`shotnoise=false` required). EnvGrid free-space (c2c 3-D) and a z-dependent
-`normfun` are deferred, mirroring every prior phase's RealGrid-first pattern.
+scalar Kerr and EnvGrid + `const_norm_free` scalar Kerr, reusing the exact
+`E³`/`|E|²E` formulas already ported. The modified shot-noise branch
+(`Et_noise`/`Et_nl`) is **not** ported (`shotnoise=false` required), and a
+z-dependent `normfun` remains deferred. EnvGrid uses the full-spectrum c2c
+3-D path: preserve low/high halves, apply `1/(n_t·n_y·n_x)` inverse scaling,
+evaluate `Kerr_env`, window, forward-transform, crop, and normalize.
+
+Plan 19 extends only the RealGrid branch with one PPT plasma response. After
+the inverse transform and Kerr, the flattened volume is segmented into
+`n_y*n_x` independent time series. For each series, CUDA applies the same
+three trapezoidal integrations and current add-in as the CPU
+`apply_plasma_free`: PPT rate → ionized fraction → `e_ratio*F*E` phase →
+ionization-loss current → polarization, then adds `density*P` into `Pto`.
+The segmented block totals are indexed by `(series, block)`, so a partial
+last block or adjacent spatial columns cannot share prefix state. This
+plasma contribution is applied before `towin` and the joint forward FFT;
+EnvGrid plasma, ADK, Raman, z-dependent normalization, and shot noise remain
+outside the CUDA contract.
+
+Plan 20 uses the same free-space RealGrid series layout and three cumulative
+trapezoid stages for thresholded ADK. Only the pointwise rate changes: each
+sample uses `IonRateADK`'s exact finite-field threshold branch and the seven
+Julia-transferred constants, including the optional `avfac*sqrt(abs(E))`
+factor. The resulting ADK polarization is accumulated after Kerr and before
+the time window and joint forward transform; unthresholded ADK remains on the
+CPU path.
+
+Plan 21 reuses that same flattened layout for delayed SDO Raman: `s=iy+n_y*ix`
+and `j=s*n_time_over+i`, with one ADE oscillator-state vector per spatial
+series. For `thg=true`, the intensity input is `E²`; for `thg=false`, a batched
+temporal-only c2c transform applies the local analytic-signal mask before
+forming `0.5*abs2(hilbert(E))`. The ADE output is then accumulated as
+`Pto += density*E*P`, after Kerr and before the time window and joint forward
+3-D transform. Scratch allocation and the Hilbert plan use checked
+`n_time_over*n_y*n_x` sizing, and the setter commits only after all new device
+buffers/plans are ready. This is why a non-square grid with independent point
+signals is part of the acceptance test: a flattened-series or Hilbert-axis
+mistake can otherwise agree on a symmetric pulse.
+
+**Plan 21 gate:** strict CUDA direct-stage errors were `1.28e-15`–`1.35e-15`
+and fixed-solve errors were `2.62e-16`/`2.68e-16` for `thg=true/false`; the
+Julia Raman-on/off effects were `1.176e-3`/`1.181e-3`, comfortably above the
+`1e-6` trajectory tolerance. The focused item passed 44/44, including N₂
+vibration, rotation, rotation+vibration, rejection boundaries, and a rejected
+adaptive step. EnvGrid Raman, plasma composition, z-dependent norm/linop, and
+automatic dispatch remain outside this contract.
 
 **Gate achieved:** single-step 7.05e-18, full-solve 5.01e-17 (fixed step
 size, `test/test_native_free.jl`, `N=8` transverse grid). Both land at the

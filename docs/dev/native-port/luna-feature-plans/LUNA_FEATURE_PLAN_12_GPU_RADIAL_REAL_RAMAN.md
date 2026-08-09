@@ -1,6 +1,6 @@
 # Luna feature plan 12 — CUDA radial RealGrid SDO Raman
 
-Status: depends on plans 02 and 08.
+Status: complete 2026-08-04; standing CUDA CI remains strongly preferred.
 
 ## Outcome
 
@@ -21,6 +21,26 @@ column.
 6. Broaden eligibility only for RealGrid radial matching SDO Raman, scalar
    density, constant linop/norm, no plasma/noise/mixture. Keep `:SiO2` out.
 7. Keep `:auto` false.
+
+## Implementation contract
+
+The radial RealGrid buffers use the existing column-major resident layout:
+`offset = radial_column*n_time_over + time_index`.  The CUDA Raman intensity,
+polarization, Hilbert scratch, and ADE launch therefore use one contiguous
+`n_time_over*n_r` allocation.  `raman_ade_kernel` receives `n_series=n_r`; its
+one CUDA thread per series owns fresh oscillator states, so no state is shared
+between radial columns or RHS stages.  For `thg=false`, `cufftPlan1d` is used
+with `batch=n_r` over those contiguous columns, followed by the existing parity
+filter and `1/n_time_over` inverse scale.  Mode-averaged setup keeps
+`n_series=1` and its current allocation sizes.  Raman is evaluated after Kerr
+and any supported radial plasma contribution, before the radial time window and
+QDHT multiplication; no host transfer is introduced in an RHS call.
+
+The setter stages allocations and the batched Hilbert plan using the current
+radial geometry (`n_r` when radial, otherwise one), then commits them together.
+Eligibility is limited to RealGrid radial `RamanPolarField` SDO responses with
+one scalar density and otherwise the existing Plan 08 constraints.  `:auto`
+continues to reject every radial configuration.
 
 ## Acceptance
 

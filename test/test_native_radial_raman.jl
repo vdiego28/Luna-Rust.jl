@@ -96,6 +96,36 @@ using TestItems
             @test rel_raman_effect > 1e-6
         end
 
+        @testset "CPU radial thg=false and rotational SDO coverage" begin
+            # Plan 12's CUDA contract shares the CPU column layout and the
+            # flattened oscillator capacity.  Exercise both CPU controls here
+            # even on hosts without a CUDA driver, so the focused CUDA item
+            # cannot be the only coverage for these two branches.
+            for (rotation, vibration, expected) in ((false, true, 1),
+                                                       (true, false, 49))
+                rr_case = Raman.raman_response(grid.to, gas;
+                                               rotation=rotation,
+                                               vibration=vibration)
+                @test length(Raman.flatten_sdo_oscillators(rr_case)) == expected
+                raman_case = Nonlinear.RamanPolarField(grid.to, rr_case; thg=false)
+                responses_case = (Nonlinear.Kerr_field(PhysData.γ3_gas(gas)),
+                                  raman_case)
+                Eω_case, transform_case, _ = with_logger(NullLogger()) do
+                    Amalthea.setup(grid, q, densityfun, normfun,
+                                   responses_case, inputs)
+                end
+                s_jl = PreconStepper(transform_case, linop, copy(Eω_case), t0, dt,
+                                     rtol=1e-6, atol=1e-10)
+                s_ru = RustNativeStepper(transform_case, linop, copy(Eω_case), t0, dt,
+                                         rtol=1e-6, atol=1e-10)
+                step!(s_jl)
+                step!(s_ru)
+                rel_case = norm(s_ru.yn - s_jl.yn) / norm(s_jl.yn)
+                println("CPU radial Raman rotation=$rotation thg=false rel: ", rel_case)
+                @test rel_case < 2e-7
+            end
+        end
+
         @testset "n_threads=1 vs n_threads=4 bit-identical (docs/dev/BACKLOG.md S2 Phase 4)" begin
             # S2 Phase 4 item 1 parallelizes apply_raman_radial's per-r-column
             # ADE solve. Unlike plasma, the solver + Hilbert scratch are shared
