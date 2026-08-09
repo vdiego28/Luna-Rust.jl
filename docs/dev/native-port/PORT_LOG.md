@@ -4135,3 +4135,40 @@ free-space high-half-only stage errors were `1.0905464182781277e-15` and
 gate passed **43,455/43,455** in **16m13.6s**.
 **Next:** Leave the working tree uncommitted for lead review. The separate live
 queue remains standing required-CUDA CI, still deferred by the lead.
+
+## 2026-08-09 — v1.0.3 release preparation — Codex (GPT-5)
+**Status:** in-progress (combined release prepared; hosted release-branch gate
+pending).
+**Did:** Combined the hosted-green CUDA Plans 12–21 work with the locally
+validated ARM64/CPU-only installation work on `release/1.0.3`. Synchronized
+Julia/Python metadata at `1.0.3`, added the release changelog, and converted
+the temporary installation guidance to final `v1.0.3` commands and platform
+claims.
+**How:** `cd84f6b` records the installation unit; merge commit `2028abc`
+integrates `gpu-plans-12-21-review` commit `5a257de`. The only merge conflicts
+were additive overlaps in `docs/dev/native-port/GPU.md` and this log; both
+records were retained. `Project.toml` and `python/pyproject.toml` now name the
+release version, `CHANGELOG.md` summarizes the GPU/portability surface, and
+`.github/workflows/release.yml` will build four CPU-only assets when the
+matching `v1.0.3` tag is pushed.
+**Decisions:** Use patch version `1.0.3`, matching the development metadata
+already established after `v1.0.2`. Keep CUDA an explicit source build and
+publish portable CPU-only binaries for Linux x86_64/AArch64, macOS AArch64,
+and Windows x86_64. Require the combined hosted matrix and the new ARM64 job
+before tagging even though both input units already passed their own gates.
+**Gotchas:** Amalthea is installed from tagged GitHub revisions rather than
+Julia General, so the README/manual must pin `v1.0.3`. The release tag itself
+triggers binary publication; pushing the release branch alone must not create
+a release. Standing required-CUDA CI remains deferred and is not implied by
+the CPU-only ARM64 job.
+**Tests:** Input CUDA branch hosted run `31331333474` passed. On the combined
+tree, `AMALTHEA_CUDA_BUILD=off cargo test --release` passed **82/82** Rust unit
+tests, **5/5** build-policy tests, and doc-tests. Targeted `rustfmt --check`,
+conflict-marker inspection, and `git diff --check` passed. The final-version
+installer/Phase-0 FFI bucket passed **46/46**. The Documenter build passed
+doctests, cross-references, document checks, and HTML rendering with inventory
+version `1.0.3`; only the expected local remote/deployment detection warnings
+were emitted.
+**Next:** Push `release/1.0.3`, require its test and documentation workflows to
+pass (including native Linux ARM64 installation), then tag the exact tested
+commit and verify all four binaries against `SHA256SUMS.txt`.

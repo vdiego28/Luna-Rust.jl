@@ -7,7 +7,7 @@
 > `CUDA_HOME`/`CUDA_PATH` overrides, and troubleshooting steps are in the
 > [installation and configuration guide](../../src/installation.md#cuda-installation).
 
-> **Current status (2026-08-08, updated): the correctness block is FIXED.**
+> **Current status (2026-08-09, updated): the correctness block is FIXED.**
 > `CudaNativeSim` computes real nonlinearity again and is verified on real
 > hardware — stage derivatives match CPU native to ~1e-15 (previously
 > `max|kᵢ| ≈ 3.5e-13` against CPU's 12225, i.e. pure linear propagation),

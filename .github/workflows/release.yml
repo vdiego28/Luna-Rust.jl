@@ -1,8 +1,7 @@
 name: Release prebuilt amalthea binaries
 
-# Triggered by the same `vX.Y.Z` tags TagBot.yml pushes after a Julia
-# registry release, so a release's binaries always match the Project.toml
-# version that deps/build.jl (try_download_prebuilt) looks up.
+# Triggered by a `vX.Y.Z` release tag, so the published binaries always match
+# the Project.toml version that deps/build.jl (try_download_prebuilt) looks up.
 on:
   push:
     tags:

@@ -12,13 +12,13 @@ architecture. It never installs a binary for a different architecture.
 | Operating system | Architecture | Release binary | Installation path |
 |---|---|---|---|
 | Linux (glibc) | `x86_64` | Yes | Download verified binary; build from source if unavailable |
-| Linux (glibc) | ARM64/AArch64 | Starting with the first release containing the ARM64 installer work | Until that release, install `main` from source; older tags predate architecture-safe selection |
+| Linux (glibc) | ARM64/AArch64 | Yes | Download verified binary; build from source if unavailable |
 | macOS | Apple Silicon/ARM64 | Yes | Download verified binary; build from source if unavailable |
 | Windows | `x86_64` | Yes | Download verified binary; build from source if unavailable |
-| macOS | Intel `x86_64` | No | Install `main` from source until the architecture-safe installer is released |
-| Windows | ARM64 | No | Install `main` from source until the architecture-safe installer is released |
-| Linux | ARMv6/ARMv7, musl, or another architecture/libc | No | Install `main` from source; not release-tested |
-| Other Julia-supported systems | Varies | No | Install `main` from source; not release-tested |
+| macOS | Intel `x86_64` | No | Build from source |
+| Windows | ARM64 | No | Build from source |
+| Linux | ARMv6/ARMv7, musl, or another architecture/libc | No | Build from source; not release-tested |
+| Other Julia-supported systems | Varies | No | Source-build fallback; not release-tested |
 
 The Linux ARM64 release job uses Ubuntu 22.04 to avoid imposing the newer
 glibc baseline of Ubuntu 24.04. A machine with an older or incompatible libc
@@ -37,28 +37,26 @@ julia> (Sys.KERNEL, Sys.ARCH)
 Install Julia from [julialang.org/downloads](https://julialang.org/downloads/),
 start Julia, and enter package mode with `]`. Amalthea is not yet registered in
 Julia's General registry, so install a tagged release directly from GitHub.
-The current release is `v1.0.2`:
+The current release is `v1.0.3`:
 
 ```julia
-pkg> add https://github.com/vdiego28/Amalthea.jl#v1.0.2
+pkg> add https://github.com/vdiego28/Amalthea.jl#v1.0.3
 ```
 
 The equivalent programmatic command is the same on every operating system:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="v1.0.2")
+Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="v1.0.3")
 ```
 
 Use the newest tag shown on the project's
 [Releases page](https://github.com/vdiego28/Amalthea.jl/releases). Do not omit
 the tag unless a source build of the development branch is intended.
 
-The `v1.0.2` binaries cover Linux `x86_64`, macOS Apple Silicon, and Windows
-`x86_64`. On Linux ARM64 or another source-fallback platform, use the development
-checkout instructions below until the first architecture-safe release is
-published. Older tags must not be used there because their installer could
-select a binary for the wrong CPU architecture.
+The `v1.0.3` binaries cover Linux `x86_64`, Linux ARM64, macOS Apple Silicon,
+and Windows `x86_64`. Other OS/architecture combinations use the
+architecture-safe source fallback.
 
 During installation, `deps/build.jl`:
 
@@ -169,12 +167,6 @@ oracle used by the native-backend tests.
 CUDA is an explicit source-build option. It requires an NVIDIA driver and a
 CUDA toolkit containing `nvcc`. Modern macOS systems do not have a supported
 NVIDIA CUDA path and should use CPU-only mode.
-
-`AMALTHEA_CUDA_BUILD` is available on `main` and will be present in the first
-release containing this installer work. The current `v1.0.2` package predates
-the policy, so CUDA users of that version must first install `main` using the
-development instructions above. Once a newer tagged release contains the
-policy, it can be rebuilt directly.
 
 Build in a fresh Julia process:
 
@@ -317,14 +309,14 @@ are not needed for normal resident-backend use.
 ## Updating, rebuilding, and switching modes
 
 Because Amalthea is installed from GitHub rather than General, upgrade by
-selecting the newer release tag. For example, the current tagged release is:
+selecting the newer release tag. The current tagged release is:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="v1.0.2")
+Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="v1.0.3")
 ```
 
-Replace `v1.0.2` with the newer tag shown on the Releases page when one is
+Replace `v1.0.3` with the newer tag shown on the Releases page when one is
 published. The package's build step runs automatically after the revision is
 changed; `Pkg.build("Amalthea")` can be used to repeat it manually.
 

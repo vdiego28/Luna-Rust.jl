@@ -4,6 +4,39 @@ All notable changes to Amalthea.jl are documented here. This project is a
 fork of [Luna.jl](https://github.com/LupoLab/Luna.jl); versions below are
 this fork's own, starting from the point the Rust backend was introduced.
 
+## [1.0.3]
+
+GPU geometry expansion and portable-installation update for the native backend.
+
+### Added
+- Explicit CUDA-resident support for radial `RealGrid`/`EnvGrid` SDO Raman,
+  modal `RealGrid`/`EnvGrid` Kerr, modal `RealGrid` SDO Raman, and free-space
+  `RealGrid`/`EnvGrid` Kerr.
+- Free-space `RealGrid` CUDA support for PPT plasma, thresholded ADK, and SDO
+  Raman, with independent resident state for every transverse time series.
+- CPU-only Linux ARM64 release binaries and a native ARM64 package-build/FFI
+  smoke job in the standing test workflow.
+- A cross-platform installation and configuration guide covering Linux,
+  macOS, Windows, ARM, source fallbacks, and optional CUDA builds.
+
+### Changed
+- Package and release builds now default to CPU-only operation and never
+  require CUDA or probe `nvcc`; CUDA is enabled explicitly with
+  `AMALTHEA_CUDA_BUILD=required`.
+- Prebuilt selection now matches the exact OS/architecture pair. Unsupported
+  platforms compile from source instead of receiving a mismatched binary.
+- CUDA radial, modal, and free-space additions remain explicit-on while their
+  production-shaped automatic-dispatch thresholds are unmeasured.
+
+### Fixed
+- Preserved both retained spectral halves in oversampled modal and free-space
+  `EnvGrid` CUDA transforms.
+- Released the free-space c2c cuFFT plan during final CUDA teardown.
+- Serialized cold-depot Julia worker precompilation before parallel CI bucket
+  startup, preventing shared-cache bootstrap races.
+- Added an actionable diagnostic when CUDA is requested from a CPU-only native
+  library.
+
 ## [1.0.2]
 
 Correctness, safety, and GPU-physics update for the native backend.

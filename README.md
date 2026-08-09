@@ -77,10 +77,10 @@ The Rust backend is called transparently via Julia's `ccall` interface; no Rust 
 
 Amalthea.jl requires Julia 1.10 or newer. It is not yet registered in Julia's
 General registry, so install the latest tagged release directly from GitHub
-(currently `v1.0.2`):
+(currently `v1.0.3`):
 
 ```julia
-pkg> add https://github.com/vdiego28/Amalthea.jl#v1.0.2
+pkg> add https://github.com/vdiego28/Amalthea.jl#v1.0.3
 ```
 
 Check the [Releases page](https://github.com/vdiego28/Amalthea.jl/releases)
@@ -94,25 +94,22 @@ newer:
 | Platform | Release binary |
 |---|---|
 | Linux `x86_64` | Yes |
-| Linux ARM64/AArch64 | Starting with the first release containing this ARM64 work |
+| Linux ARM64/AArch64 | Yes |
 | macOS Apple Silicon | Yes |
 | Windows `x86_64` | Yes |
 | Intel macOS, Windows ARM64, ARM32, musl Linux, other systems | Source build; not release-tested |
 
-Until the first release containing this installer work, Linux ARM64 and the
-source-fallback platforms should install `main`; older tags predate the
-architecture-safe selector. A git checkout or the `main` development branch
-always builds from source and therefore requires [rustup](https://rustup.rs/):
+Platforms without a release binary build from source and therefore require
+[rustup](https://rustup.rs/). A git checkout or the `main` development branch
+also always builds from source:
 
 ```julia
 using Pkg
 Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="main")
 ```
 
-The explicit CUDA build policy is present on `main` and will be included in the
-first release containing this installer work. With `v1.0.2`, install `main`
-using the source command above first. Then compile and enable the experimental
-CUDA backend in a fresh Julia process and restart Julia afterward:
+To compile and enable the experimental CUDA backend, build in a fresh Julia
+process and restart Julia afterward:
 
 ```julia
 ENV["AMALTHEA_CUDA_BUILD"] = "required"

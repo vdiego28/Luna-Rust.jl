@@ -7,30 +7,28 @@ Deferred work and known issues for Amalthea.jl. Severity: 🔴 correctness · �
 > [`ARCHIVE.md`](ARCHIVE.md) with its section names unchanged. Cross-references
 > below to a phase, to S1/S4, or to "Done (recent)" resolve there.
 
-## Start here — current resume queue (2026-08-08)
+## Start here — current resume queue (2026-08-09)
 
 This is the authoritative short queue. The long sections below retain design
 history and measured evidence, but older words such as "next", "not started",
 or "verified" inside a superseded narrative do not outrank this list.
 
-> **Current handoff:** `main` is `4925c67` (`1.0.3-DEV`), which merges the
-> published `v1.0.2` release branch after its development-metadata bump. The
-> GPU adaptive
-> repair/parallel PPT scan branch and the Windows scheduler portability/
-> visibility hotfix are merged, and their remote branches were deleted after
-> ancestry checks. Main test run `30642534593` passed all **16/16** jobs and
-> documentation run `30642537095` passed. `origin` now has only `main` and the
-> required `gh-pages` deployment branch. The live queue is deliberately short:
-> standing required-CUDA CI remains deferred by the lead (item 2 below).
-> Broader mode-averaged SDO Raman was completed and hardware-verified on
-> 2026-08-02; radial RealGrid and EnvGrid scalar-Kerr GPU slices and radial
-> RealGrid/EnvGrid SDO Raman Plans 12–13 are complete. Plan 14's modal
-> RealGrid scalar-Kerr surface was hardware-verified on 2026-08-04, and Plan
-> 15's modal EnvGrid scalar-Kerr c2c extension was hardware-verified on
-> 2026-08-08. Plan 21's free-space RealGrid SDO Raman extension was
-> hardware-verified on 2026-08-09. The only live queue item is standing required CUDA CI, which
-> remains deferred by the lead. Do not recreate a
-> completed integration branch as a resume step.
+> **Current handoff:** `release/1.0.3` combines the hardware-verified CUDA
+> Plans 12–21 branch (`5a257de`, hosted run `31331333474` green) with the
+> ARM64/CPU-only installation work (`cd84f6b`). Julia and Python metadata are
+> synchronized at `1.0.3`, and `CHANGELOG.md` plus the installation manual are
+> release-ready. The combined CPU Rust gate passes locally; hosted validation
+> of the combined branch, especially the new native Linux ARM64 install/FFI
+> job, is the remaining publication gate. No `v1.0.3` tag or GitHub release
+> exists yet. Standing required-CUDA CI remains separately deferred by the
+> lead.
+
+> **Release `v1.0.3` — PREPARED 2026-08-09:** this release expands explicit
+> CUDA support across radial, modal, and free-space geometries; includes the
+> reviewed EnvGrid spectral-half and cuFFT teardown repairs; and makes ordinary
+> installation CPU-only, architecture-safe, and available as a Linux ARM64
+> prebuilt. Publish only after the release branch's test and documentation
+> workflows are green.
 
 > The upstream Luna.jl review is recorded in
 > [`native-port/UPSTREAM_TRIAGE.md`](native-port/UPSTREAM_TRIAGE.md). Its
