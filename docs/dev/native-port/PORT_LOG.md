@@ -4239,3 +4239,26 @@ package in the Julia General registry" with "minted; install this release
 directly from GitHub." Commit/push this post-release audit, merge the release
 branch into `main`, and require the resulting main test/documentation runs to
 pass. Standing required-CUDA CI remains separately deferred.
+
+## 2026-08-10 — v1.0.3 main integration — Codex (GPT-5)
+**Status:** complete.
+**Did:** Merged the complete `release/1.0.3` history, including the
+post-release `1.0.4-DEV` metadata and public-claims audit, into `main`.
+**How:** Merge commit `5c9a4bdb94b71d9128d259817e7b9a301660b3ef`
+preserves release commit `65489dd`, post-release commit `09eec71`, the
+installation commit `cd84f6b`, and CUDA Plans 12-21 commit `5a257de` through
+merge `2028abc`.
+**Decisions:** Preserve a non-fast-forward release boundary. Do not move or
+retag `v1.0.3`; it remains pinned to the exact pre-publication commit that
+passed the release-candidate matrix.
+**Gotchas:** Zenodo record `21327636` remains the only public metadata surface
+that could not be changed without owner authentication. The repository,
+stable docs target, and GitHub releases are corrected.
+**Tests:** No code changed during the merge. The exact release commit passed
+release-candidate run `31334708624`, tag test run `31383860700`, release
+workflow `31383860726`, documentation workflow `31383860719`, and downloaded
+asset verification recorded immediately above. The post-release documentation
+and benchmark changes passed their focused local validation before merge.
+**Next:** The live queue is standing required-CUDA CI, still deliberately
+deferred by the lead. Separately, the Zenodo owner should apply the one-line
+v1.0.0 General-registry metadata correction recorded above.

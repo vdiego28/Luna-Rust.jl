@@ -24,8 +24,9 @@ or "verified" inside a superseded narrative do not outrank this list.
 > registry, documentation-link, and benchmark claims. The repository and
 > GitHub v1.0.0 release are corrected; Zenodo v1.0.0 record `21327636` still
 > needs its owner to apply the same metadata correction because no Zenodo
-> credential is available here. Standing required-CUDA CI remains separately
-> deferred by the lead.
+> credential is available here. The release branch and post-release audit are
+> merged into `main` at `5c9a4bd`. Standing required-CUDA CI remains
+> separately deferred by the lead.
 
 > **Release `v1.0.3` — PUBLISHED 2026-08-10:** this release expands explicit
 > CUDA support across radial, modal, and free-space geometries; includes the
