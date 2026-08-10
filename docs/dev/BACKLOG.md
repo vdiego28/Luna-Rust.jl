@@ -7,28 +7,32 @@ Deferred work and known issues for Amalthea.jl. Severity: 🔴 correctness · �
 > [`ARCHIVE.md`](ARCHIVE.md) with its section names unchanged. Cross-references
 > below to a phase, to S1/S4, or to "Done (recent)" resolve there.
 
-## Start here — current resume queue (2026-08-09)
+## Start here — current resume queue (2026-08-10)
 
 This is the authoritative short queue. The long sections below retain design
 history and measured evidence, but older words such as "next", "not started",
 or "verified" inside a superseded narrative do not outrank this list.
 
-> **Current handoff:** `release/1.0.3` combines the hardware-verified CUDA
-> Plans 12–21 branch (`5a257de`, hosted run `31331333474` green) with the
-> ARM64/CPU-only installation work (`cd84f6b`). Julia and Python metadata are
-> synchronized at `1.0.3`, and `CHANGELOG.md` plus the installation manual are
-> release-ready. The combined CPU Rust gate passes locally; hosted validation
-> of the combined branch, especially the new native Linux ARM64 install/FFI
-> job, is the remaining publication gate. No `v1.0.3` tag or GitHub release
-> exists yet. Standing required-CUDA CI remains separately deferred by the
-> lead.
+> **Current handoff:** `v1.0.3` is published from tested commit `65489dd`.
+> Release-candidate run `31334708624` passed all 17 substantive jobs,
+> including native Linux ARM64 installation/FFI; release workflow
+> `31383860726` published four CPU binaries plus `SHA256SUMS.txt`, and every
+> downloaded checksum passed. Documentation workflow `31383860719` deployed
+> the stable manual, and redundant tag test run `31383860700` passed its full
+> matrix. Post-release work advances metadata to `1.0.4-DEV` /
+> `1.0.4.dev0` and corrects public authorship, compatibility, dispatch,
+> registry, documentation-link, and benchmark claims. The repository and
+> GitHub v1.0.0 release are corrected; Zenodo v1.0.0 record `21327636` still
+> needs its owner to apply the same metadata correction because no Zenodo
+> credential is available here. Standing required-CUDA CI remains separately
+> deferred by the lead.
 
-> **Release `v1.0.3` — PREPARED 2026-08-09:** this release expands explicit
+> **Release `v1.0.3` — PUBLISHED 2026-08-10:** this release expands explicit
 > CUDA support across radial, modal, and free-space geometries; includes the
 > reviewed EnvGrid spectral-half and cuFFT teardown repairs; and makes ordinary
 > installation CPU-only, architecture-safe, and available as a Linux ARM64
-> prebuilt. Publish only after the release branch's test and documentation
-> workflows are green.
+> prebuilt. The release is public, non-draft, and non-prerelease; its four
+> downloaded binaries pass the published checksum manifest.
 
 > The upstream Luna.jl review is recorded in
 > [`native-port/UPSTREAM_TRIAGE.md`](native-port/UPSTREAM_TRIAGE.md). Its
@@ -1534,17 +1538,18 @@ ARM64/CPU-only installation hardening designed in `native-port/PLANS.md` §13.*
    (the item's stated follow-on) is blocked separately regardless: FFTW
    and HDF5 are both `dlopen`ed native libraries with no general `dlopen`
    equivalent in WASM.
-4. 🟡 **Portable ARM64 and CPU-only installation — implemented locally
-   2026-08-09; first hosted ARM64 run pending.** A native Linux AArch64 release
+4. 🟢 **Portable ARM64 and CPU-only installation — COMPLETE 2026-08-10.**
+   A native Linux AArch64 release
    asset is wired, with architecture-correct installer triple selection so
    unsupported architectures never receive a
    mismatched binary, and make package/release builds explicitly CPU-only by
    default. Direct Cargo development retains automatic CUDA discovery;
    `AMALTHEA_CUDA_BUILD=required` is the explicit source-build route for the
-   experimental GPU backend. Acceptance requires native ARM64 CI through a
-   Julia build + FFI smoke test; the x86 source build that never probes CUDA is
-   green, and the ARM workflow will provide the remaining native verification
-   after this branch is pushed.
+   experimental GPU backend. Native ARM64 Julia build + installer/FFI job
+   `93298544991` passed in hosted run `31334708624`; tag workflow
+   `31383860726` then published the Linux AArch64 asset, which passed the
+   downloaded `SHA256SUMS.txt` manifest together with the other three
+   platform binaries.
    Full design and configuration semantics: `native-port/PLANS.md` §13.
 
 **Current execution order:** use the dated resume queue at the top of this

@@ -4172,3 +4172,70 @@ were emitted.
 **Next:** Push `release/1.0.3`, require its test and documentation workflows to
 pass (including native Linux ARM64 installation), then tag the exact tested
 commit and verify all four binaries against `SHA256SUMS.txt`.
+
+## 2026-08-10 — v1.0.3 publication and public-claims audit — Codex (GPT-5)
+**Status:** complete for release publication and repository/GitHub corrections;
+Zenodo v1.0.0 owner metadata edit remains external.
+**Did:** Published `v1.0.3` from the exact combined release-candidate commit,
+verified all four public CPU binaries against the downloaded checksum
+manifest, and advanced development metadata to `1.0.4-DEV` / `1.0.4.dev0`.
+Then corrected the public documentation target, package authorship,
+compatibility wording, historical v1.0.0 dispatch/registry claims, citation
+year, and the unsupported implication of universal native speedup. Added a
+reproducible Julia-oracle versus resident-native comparison and corrected the
+public GitHub v1.0.0 and v1.0.3 release notes.
+**How:** Release-candidate run `31334708624` passed all 17 substantive jobs at
+`65489dd7f89703f4ac80afe91470f89364a63727`, including native Linux ARM64 job
+`93298544991`. Lightweight tag `v1.0.3` points to that SHA. Tag workflow
+`31383860726` published
+`libamalthea-{x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu}.so`,
+`libamalthea-aarch64-apple-darwin.dylib`,
+`libamalthea-x86_64-pc-windows-msvc.dll`, and `SHA256SUMS.txt`; documentation
+workflow `31383860719` deployed the stable manual. `README.md:4-119` now links
+Documenter's `stable/` tree, defines the tested compatibility boundary, and
+publishes the measured comparison and exact command. `Project.toml:3-8`
+records both original Luna.jl authorship and Diego's Amalthea.jl maintenance
+role. `CHANGELOG.md:7-15,117-148` records the post-release audit and annotates
+the historical v1.0.0 inaccuracies. `test/benchmark_julia_vs_native.jl:1-128`
+forces Julia/native CPU paths, fixed randomness, one physical workload,
+warmed repeated complete solves, host/sample reporting, and a `1e-6`
+equivalence gate. `PLANS.md` sections 13-14 and `BACKLOG.md` close the ARM64
+item and retain the public-claims decision record.
+**Decisions:** Treat "performance-engineering" as project direction, not a
+speed guarantee. Compare the resident backend to the retained Luna-compatible
+Julia oracle in one checkout so dependency/version drift cannot masquerade as
+backend speedup, and label it explicitly as not an independently installed
+upstream Luna.jl comparison. Publish the measured non-speedup instead of
+selecting the favorable three-trial sample. Preserve v1.0.0 historical prose
+under a prominent correction instead of silently rewriting history. Keep
+stable documentation under `/stable/`; the Pages root remains only the
+native-step regression dashboard.
+**Gotchas:** The initial three-trial benchmark looked `3.283x` faster because
+the Julia timings were bimodal. Seven trials contradicted it. After forcing
+Julia/OpenBLAS/OMP to one thread and collecting garbage before each timed run,
+the realistic five-trial quickstart comparison was stable and showed native
+slightly slower. The first script run also exposed a top-level Julia
+soft-scope error after timing; explicit field references fixed it. The first
+GitHub release-note API update rendered literal `\n` sequences; public
+verification caught it and a follow-up normalization restored the intended
+callout. Zenodo public API confirms v1.0.0 record `21327636` contains the false
+General-registry claim and supports owner revisions, but no `ZENODO_TOKEN` or
+authenticated Zenodo session is available here, so changing that external
+record is not authorized or technically possible in this environment.
+**Tests:** Redundant tag test run `31383860700` passed its complete matrix.
+Downloaded release assets in `/tmp/amalthea-v1.0.3-8OU9an` passed
+all four `sha256sum -c SHA256SUMS.txt` lines. The controlled five-trial Linux
+x86_64/AMD Zen 3/Julia 1.12.6 benchmark measured Julia-oracle median
+`0.985609 s`, native median `1.113455 s`, ratio `0.885x`, and final-field
+relative error `1.6624194468057829e-9`. Project metadata parsed at
+`1.0.4-DEV` with all three author entries. The full Documenter build passed
+doctests, cross-references, document checks, and HTML rendering; only expected
+local remote/deployment auto-detection warnings remained. `git diff --check`
+and stale-claim/link scans passed; all four corrected stable documentation URLs
+returned HTTP 200.
+**Next:** The Zenodo owner should edit
+`https://zenodo.org/records/21327636` and replace "minted, registered as a new
+package in the Julia General registry" with "minted; install this release
+directly from GitHub." Commit/push this post-release audit, merge the release
+branch into `main`, and require the resulting main test/documentation runs to
+pass. Standing required-CUDA CI remains separately deferred.

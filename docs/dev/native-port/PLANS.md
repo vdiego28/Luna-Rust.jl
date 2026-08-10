@@ -20,7 +20,8 @@ the durable rationale.
 | [Beyond-Luna math](#6-beyond-luna-math-options-backlog-phase-j-item-6) | Phase J.6 | **Closed.** Direct error/PPT: do not pursue; short-kernel Raman measured 2026-07-25 and rejected |
 | [2026-07-31 correctness, safety, CI, and GPU campaign](#11-2026-07-31-correctness-safety-ci-and-gpu-campaign) | Correctness, safety, CI, and first ADK slice | **Complete 2026-07-31.** Four reviewed work units landed; thresholded ADK is retained at `_GPU_ADK_N_THRESHOLD = 8193` |
 | [GPU mode-averaged SDO Raman](#12-gpu-mode-averaged-sdo-raman) | S3 broader GPU physics | **Complete 2026-08-02.** RealGrid carrier and EnvGrid envelope verified; `:SiO2` and other geometries remain out of scope |
-| [Portable installation on ARM64 and CPU-only hosts](#13-portable-installation-on-arm64-and-cpu-only-hosts) | S6 item 4 | **Implemented locally 2026-08-09; first hosted ARM64 run pending.** Linux ARM64 binaries and an explicit CPU-only build policy are wired |
+| [Portable installation on ARM64 and CPU-only hosts](#13-portable-installation-on-arm64-and-cpu-only-hosts) | S6 item 4 | **Complete 2026-08-10.** Native ARM64 install/FFI CI passed and v1.0.3 published the checksum-verified Linux AArch64 asset |
+| [Public claims and backend comparison benchmark](#14-public-claims-and-backend-comparison-benchmark) | Public release audit | **Repository/GitHub complete 2026-08-10; Zenodo owner edit pending.** Public claims are corrected and the equivalence-checked comparison is reproducible |
 
 ---
 
@@ -2788,7 +2789,9 @@ and zero spill stores/loads, so the retained mode-averaged workload is usable.
 
 ## 13. Portable installation on ARM64 and CPU-only hosts
 
-Status: **Implemented locally 2026-08-09; first hosted ARM64 run pending.**
+Status: **Complete 2026-08-10.** Hosted native ARM64 installation/FFI job
+`93298544991` passed in release-candidate run `31334708624`; release workflow
+`31383860726` published and checksum-verified the Linux AArch64 binary.
 Related tracking: `BACKLOG.md` S6 item 4.
 
 ### 13.1 Problem and supported boundary
@@ -2854,3 +2857,51 @@ unsupported OS/architecture mapping. Rust build-policy tests cover all three
 CUDA modes, strict-test precedence, invalid configuration, and the CPU-only PTX
 marker. Local x86 validation uses `AMALTHEA_CUDA_BUILD=off` and must not depend
 on this workstation's installed CUDA toolkit.
+
+## 14. Public claims and backend comparison benchmark
+
+Status: **Repository and GitHub complete 2026-08-10; Zenodo owner edit
+pending.**
+
+The public README and historical v1.0.0 metadata currently overstate API
+compatibility and hardware dispatch, while the benchmark published at the
+documentation-site root measures only native step time. Correct the public
+surface as one bounded documentation/benchmark unit:
+
+1. Point documentation links at Documenter's `stable/` tree rather than the
+   benchmark dashboard at the GitHub Pages root.
+2. Describe compatibility as an intention backed by the repository's actual
+   cross-platform Julia/native equivalence suites, not as an unconditional
+   promise. Preserve upstream Luna.jl authorship while identifying the
+   Amalthea.jl maintainer in package metadata.
+3. Annotate the v1.0.0 changelog and release notes: `dispatch.rs` was
+   detection-only, no Vulkan propagation implementation existed, and the
+   package was not registered in Julia General.
+4. Add a standalone comparison script for the same fixed physical workload
+   through the retained Luna-compatible Julia oracle
+   (`AMALTHEA_USE_RUST_NATIVE=0`) and Amalthea's resident CPU backend
+   (`AMALTHEA_USE_RUST_NATIVE=1`, GPU forced off). Use a fixed seed, disable
+   shot noise, warm both paths, time repeated complete solves, report host and
+   Julia metadata, and reject the result unless both output fields agree at
+   the established full-solve equivalence tier. This isolates backend cost in
+   one checkout; it must be labelled as a backend comparison rather than a
+   benchmark against an independently installed current Luna.jl release.
+
+The README will publish a dated result with the exact command, workload,
+timing statistic, hardware, version/commit, and numerical error. The existing
+CI trend graph remains explicitly described as an internal regression guard,
+not evidence of Luna-versus-Amalthea speedup.
+
+The retained five-trial result on Linux x86_64/AMD Zen 3 with Julia 1.12.6
+and one Julia/OpenBLAS/OMP thread is intentionally a non-speedup: the Julia
+oracle median was 0.985609 s and resident native median 1.113455 s, a
+Julia/native ratio of 0.885x, while the final fields agreed to
+`1.6624194468057829e-9`. That result replaces the unsupported implication that
+native is universally faster and gives users a script to rerun on their own
+hardware.
+
+The repository changelog and public GitHub v1.0.0 release now carry the
+historical correction. Zenodo record `21327636` permits an owner metadata
+revision, but this environment has no Zenodo access token or authenticated UI
+session. Its false General-registry phrase therefore remains an explicit
+owner action rather than being silently treated as fixed.
