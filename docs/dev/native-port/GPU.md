@@ -1,6 +1,13 @@
 # GPU-Resident Propagation (Track S3) Design Document
 
-> **Current status (2026-08-02, updated): the correctness block is FIXED.**
+> **Build prerequisite:** release binaries and ordinary `Pkg.build` installs
+> are CPU-only. Before using the runtime switches described below, compile real
+> PTX from a CUDA toolkit with `AMALTHEA_CUDA_BUILD=required`, close that Julia
+> process, and start a new one. The cross-platform commands, `NVCC`/
+> `CUDA_HOME`/`CUDA_PATH` overrides, and troubleshooting steps are in the
+> [installation and configuration guide](../../src/installation.md#cuda-installation).
+
+> **Current status (2026-08-09, updated): the correctness block is FIXED.**
 > `CudaNativeSim` computes real nonlinearity again and is verified on real
 > hardware — stage derivatives match CPU native to ~1e-15 (previously
 > `max|kᵢ| ≈ 3.5e-13` against CPU's 12225, i.e. pure linear propagation),
@@ -13,6 +20,86 @@
 > fixed alongside: `set_field` never seeded `ks_d[0]`, so the first `step()`
 > read uninitialized device memory.
 >
+> **2026-08-04 Plan 14:** modal RealGrid scalar Kerr is now hardware-verified
+> for constant-radius Marcatili/Zeisberger/Vincetti mode collections, both
+> `full` cubature branches, and `npol=1|2`. Host libcubature remains the
+> adaptive driver; CUDA keeps the modal state and FFT/Kerr/projection scratch
+> resident and transfers only node coordinates plus callback values. The
+> focused strict test passed 37/37, with fixed-node/direct-stage CPU agreement
+> at 1.1e-15–1.4e-15 and fixed-solve agreement at 4.1e-16. Modal CUDA is
+> explicit `AMALTHEA_NATIVE_GPU=on`; `:auto` remains disabled pending a
+> production-shaped callback traffic benchmark.
+>
+> **2026-08-08 Plan 15:** the same bounded modal point evaluator now supports
+> EnvGrid scalar Kerr through resident batched c2c transforms and complex
+> envelope scratch. It uses the exact CPU `Kerr_env` scalar/vector formula and
+> low/high spectrum crop. Strict hardware verification passed 35/35, with
+> fixed-node errors `4.82e-16`–`6.12e-16`, direct-stage errors
+> `3.07e-16`–`3.27e-16`, and fixed-solve error `5.97e-16`; Raman, plasma,
+> noise, mixtures, and modal `:auto` remain excluded.
+>
+> **2026-08-08 Plan 16:** modal RealGrid scalar `npol=1` now supports one
+> flattenable SDO `RamanPolarField` alongside Kerr. Each callback batch owns
+> one Raman intensity/ADE/Hilbert series per node, with direct `E²` for
+> `thg=true` or the resident batched Hilbert analytic signal for `thg=false`;
+> Raman is accumulated before windowing and projection. Strict hardware tests
+> passed 28/28: vibrational and 49-oscillator rotational direct/stage errors
+> were ~1.3e-15, fixed-solve error was `4.6e-16`, and adaptive error was
+> `1.3e-16`. EnvGrid Raman, modal `npol=2` Raman, unsupported response forms,
+> plasma/noise/mixtures, and modal `:auto` remain CPU-selected.
+
+> **2026-08-08 Plan 17:** free-space RealGrid scalar Kerr now has a
+> transactional CUDA setup with independent 3-D D2Z/Z2D plans and resident
+> `(t,y,x)` scratch. cuFFT receives `(n_x,n_y,n_time)` so the halved dimension
+> is time and Julia's column-major layout is preserved; the RHS performs one
+> joint inverse/forward transform with explicit volume normalization. Strict
+> hardware verification passed 28/28 on a non-square `8×6` grid, including
+> nonsymmetric spectral data, fixed/adaptive/rejected trajectories, and
+> invalid/transactional setup checks. Free-space CUDA remains explicit-only;
+> EnvGrid, z-dependent norm/linop, plasma/Raman/noise, and `:auto` remain
+> excluded.
+
+> **2026-08-08 Plan 18:** the same free-space resident pipeline now supports
+> EnvGrid scalar Kerr with full-spectrum complex scratch and a joint 3-D Z2Z
+> cuFFT plan. It preserves both low/high temporal halves, uses explicit
+> `1/(n_time_over*n_y*n_x)` inverse scaling, and applies the CPU
+> `Kerr_env`/crop/window/normalization contract. Strict hardware verification
+> passed 28/28 on the non-square `8×6` case, including asymmetric complex
+> spectra, fixed/adaptive/rejected trajectories, and transactional setup
+> replacement. Plasma, Raman, noise, z-dependent norm/linop, and `:auto`
+> remain excluded.
+
+> **2026-08-08 Plan 19:** free-space RealGrid now supports one scalar Kerr
+> plus one PPT plasma response. The resident path reuses the deterministic
+> segmented 256-sample prefix scan for every `(y,x)` time series, with
+> `n_y*n_x`-sized rate/fraction/current/polarization scratch and no prefix
+> carry across spatial columns. Plasma is accumulated before the time window
+> and joint forward 3-D transform. Strict hardware verification passed
+> 28/28 on a non-square `10×8` grid: direct/asymmetric stage error was
+> `1.3e-15`, fixed-solve error `5.0e-16`, adaptive error `1.3e-14`, and the
+> independently measured Julia plasma share was `1.57e-6`. EnvGrid plasma,
+> ADK, Raman, z-dependent norm/linop, and `:auto` remain excluded.
+
+> **2026-08-08 Plan 20:** free-space RealGrid now also supports one thresholded
+> ADK plasma response. It reuses Plan 19's independent segmented scans over
+> every `(y,x)` time series, but launches the exact pointwise ADK rate with
+> threshold and non-finite-field semantics matching Julia. Strict focused
+> hardware verification passed 43/43: direct stage errors were `1.2e-15` and
+> `1.3e-15`, fixed-solve error was `4.8e-16`, adaptive error was `1.4e-16`,
+> and the Julia ADK effect was `2.7e-3`. Unthresholded ADK, EnvGrid plasma,
+> Raman/noise, z-dependent norm/linop, and `:auto` remain excluded.
+
+> **2026-08-09 Plan 21:** free-space RealGrid now supports one scalar Kerr
+> plus one flattenable SDO `RamanPolarField`. Each flattened `(y,x)` column
+> owns resident intensity/polarization/ADE scratch and, for `thg=false`, its
+> own temporal-only c2c Hilbert series; Raman is accumulated before the shared
+> time window and joint 3-D transform. Strict hardware verification passed
+> 44/44 on a non-square `10×8` grid across N₂ vibration, rotation, and their
+> combination with both THG modes. Direct stage errors were `1.28e-15`–
+> `1.35e-15`, fixed-solve errors were `2.62e-16`/`2.68e-16`, and the Julia
+> Raman-on/off effect was `1.18e-3`. EnvGrid Raman, plasma+Raman, noise,
+> mixtures, z-dependent norm/linop, and `:auto` remain excluded.
+
 > **Remaining caveats:** landed scope is mode-averaged RealGrid/EnvGrid Kerr
 > plus SDO Raman matching the grid (`RamanPolarField`/`RamanPolarEnv`), and
 > mode-averaged EnvGrid intermediate-broadening (`:SiO2`) Raman through a
@@ -22,10 +109,15 @@
 > PPT or **thresholded ADK** plasma on RealGrid only. EnvGrid plasma is an
 > explicit CPU fallback because its CUDA RHS has no plasma implementation.
 > Mixtures, shot noise,
-> z-dependent Raman, and radial/modal/free-space GPU paths still return or
+> z-dependent Raman, and broader radial/modal/free-space GPU paths still return or
 > route to CPU fallback except for Plan 08's narrow radial RealGrid, Plan
-> 09's EnvGrid scalar-Kerr slice, Plan 10's radial RealGrid PPT slice, and
-> Plan 11's radial RealGrid thresholded-ADK slice.
+> 09's EnvGrid scalar-Kerr slice, Plan 10's radial RealGrid PPT slice, Plan
+> 11's radial RealGrid thresholded-ADK slice, Plan 12's radial RealGrid
+> SDO Raman slice, Plan 13's radial EnvGrid SDO Raman slice, and Plans 14–15's
+> constant-radius modal RealGrid/EnvGrid scalar-Kerr slices, plus Plans 17–18's
+> free-space RealGrid/EnvGrid scalar-Kerr slices, Plan 19's free-space RealGrid
+> PPT slice, Plan 20's free-space RealGrid thresholded-ADK slice, and Plan 21's
+> free-space RealGrid SDO Raman slice.
 > `:SiO2` remains CPU-only outside
 > mode-averaged EnvGrid,
 > and ADK with `threshold=false` remains CPU-only. There is still no GPU
@@ -56,8 +148,8 @@
 > **2026-08-02 Plan 09:** radial EnvGrid + scalar Kerr now uses full-spectrum
 > complex c2c columns, complex resident QDHT directions, and device-side
 > spectrum/window/normalization kernels. It shares Plan 08's explicit-on
-> policy; radial `:auto` remains false and radial plasma/Raman/noise remain
-> CPU fallback.
+> policy; radial `:auto` remains false and radial plasma/noise plus EnvGrid
+> Raman were CPU fallback until Plan 13.
 > **2026-08-02 Plan 10:** radial RealGrid + one PPT `PlasmaCumtrapz` now uses
 > segmented per-column prefix scans for fraction, current, and polarization.
 > The plasma field is the post-QDHT radial time field, and all plasma state is
@@ -67,6 +159,16 @@
 > reuses those segmented scans with the exact pointwise ADK threshold and
 > non-finite-field contract. Its setup is transactional and explicit-on only;
 > unthresholded ADK, radial EnvGrid plasma, and radial `:auto` remain
+> CPU-selected.
+> **2026-08-03 Plan 12:** radial RealGrid + one SDO `RamanPolarField` now uses
+> resident `n_r`-batched ADE series and, for `thg=false`, batched c2c Hilbert
+> transforms with the per-column parity mask. It is explicit-on only; radial
+> EnvGrid Raman, plasma+Raman combinations, mixtures, and radial `:auto`
+> remain CPU-selected in this RealGrid slice.
+> **2026-08-03 Plan 13:** radial EnvGrid + one SDO `RamanPolarEnv` now uses
+> the same resident per-column ADE launch with direct `0.5*abs2(E)` intensity
+> and complex `density*E*P` accumulation. It is explicit-on only; radial
+> plasma, intermediate-broadening Raman, mixtures, noise, and `:auto` remain
 > CPU-selected.
 > Sections below that describe the defect in the present tense are retained
 > for provenance — BACKLOG S3 item 0 and
@@ -200,8 +302,9 @@ inspection before verification and stayed correct after.
 `set_plasma_params_adk` for **thresholded** ADK, and resident SDO Raman via
 `set_raman_params`; mode-averaged EnvGrid intermediate-broadening Raman uses
 the resident r2c/c2r `set_raman_fft_params` path. Plans 08 and 09 implement
-the narrow RealGrid/EnvGrid scalar-Kerr `set_radial_params` paths. Other `set_*_params`
-(`set_modal_params`, `set_free_params`, every
+the narrow RealGrid/EnvGrid scalar-Kerr `set_radial_params` paths and the
+constant-radius modal RealGrid/EnvGrid scalar-Kerr `set_modal_params` path.
+Other `set_*_params` (`set_free_params`, every
 `_zdep_*` variant, `set_mode_avg_noise[_cplx]`) still unconditionally return
 `-1`; unthresholded ADK deliberately routes to CPU.
 `RK45.jl`'s
@@ -213,19 +316,23 @@ exactly one plain Kerr response, and at most one PPT plasma response or
 supports the same base Kerr and matching `RamanPolarEnv`, but never plasma.
 Unthresholded ADK (`threshold=false`) remains unsupported by CUDA and falls
 back to CPU. Intermediate-broadening Raman is supported only for
-mode-averaged EnvGrid; RealGrid, radial, modal, and free-space variants fall
-back to CPU. RealGrid Raman
+mode-averaged EnvGrid; RealGrid, radial, modal, and free-space variants beyond
+Plan 12 fall back to CPU. RealGrid Raman
 supports both THG flags; EnvGrid Raman uses envelope intensity.
 
-Plans 08–11 add deliberately narrow radial exceptions: `TransRadial` +
+Plans 08–13 add deliberately narrow radial exceptions: `TransRadial` +
 RealGrid or EnvGrid + scalar density + constant linop/norm + exactly one plain
 Kerr; RealGrid may additionally carry one PPT or thresholded ADK
-`PlasmaCumtrapz`. There is no noise, unthresholded ADK, Raman, mixture, or
+`PlasmaCumtrapz`; Plan 12 allows one RealGrid SDO `RamanPolarField`, and Plan
+13 allows one EnvGrid SDO `RamanPolarEnv`, each without plasma. There is no
+noise, unthresholded ADK, intermediate-broadening radial Raman, mixture, or
 z-dependence in this CUDA slice. RealGrid uses resident r2c/c2r state and,
 when plasma is present, independent scan segments for each radial column;
-EnvGrid uses full-spectrum c2c state and complex QDHT buffers. All are
-selected only by explicit `AMALTHEA_NATIVE_GPU=on`; radial `:auto` remains
-false until a separate benchmark establishes a threshold.
+Raman uses one contiguous ADE series per radial column (plus the batched
+Hilbert series for RealGrid `thg=false`); EnvGrid uses full-spectrum c2c state
+and complex QDHT buffers. All are selected only by explicit
+`AMALTHEA_NATIVE_GPU=on`; radial `:auto` remains false until a separate
+benchmark establishes a threshold.
 
 **Plasma support added 2026-07-11** (BACKLOG.md S3 item 2; scan implementation
 superseded 2026-07-27): PPT ionisation
@@ -286,10 +393,12 @@ manual runs, not a standing CI job.
    mode-averaged RealGrid ADK and mode-averaged SDO Raman expansions are
    complete and retained; Plan 07's mode-averaged EnvGrid
    intermediate-broadening Raman and Plans 08/09's narrow radial RealGrid and
-   EnvGrid scalar-Kerr slices are also complete. Radial physics outside those
-   slices and
-   modal/free-space remain unimplemented, and `:SiO2` outside the EnvGrid
-   path remains CPU-only.
+   EnvGrid scalar-Kerr slices are also complete. Plans 14/15's modal RealGrid
+   and EnvGrid scalar-Kerr slices, and Plans 17/18's free-space RealGrid and
+   EnvGrid scalar-Kerr slices, are complete. Plan 21's free-space RealGrid SDO
+   Raman slice is also complete. Radial physics outside those
+   slices remains unimplemented, and `:SiO2` outside the EnvGrid path remains
+   CPU-only.
    PPT and ADK share the completed parallel scan pipeline.
 
 The problem-size dispatch policy is:
@@ -379,9 +488,9 @@ buffers and EnvGrid Kerr path are reused. No `thg` branch exists for
 Eligibility remains constant-linop, scalar-density, mode-averaged, one plain
 Kerr plus at most one `CombinedRamanResponse` made from 1–64 SDO or flattened
 rotational oscillators, or one matching EnvGrid intermediate-broadening
-response. Mixtures, shot noise, z-dependent Raman, and all radial/modal/free-
-space Raman combinations remain `NativeIneligible` and use the CPU resident/
-Julia fallback; `:SiO2` is also fallback outside mode-averaged EnvGrid. The
+response. Mixtures, shot noise, z-dependent Raman, and radial/modal/free-space
+Raman combinations beyond Plans 12–13 and Plan 21 remain `NativeIneligible` and use the CPU
+resident/Julia fallback; `:SiO2` is also fallback outside mode-averaged EnvGrid. The
 master CUDA opt-in and explicit
 `AMALTHEA_NATIVE_GPU=on` correctness route do not change.
 
@@ -451,7 +560,8 @@ explicitly, preserving asymmetric reference matrices and fields.
 requires the real CUDA path in strict mode and covers an asymmetric complex
 stage, a nonsymmetric QDHT/c2c replacement, invalid transactional rollback,
 non-vacuity, fixed solve, and adaptive rejection/retry. EnvGrid radial CUDA
-is explicit-on only; radial `:auto`, plasma, Raman, noise, mixtures, and
+is explicit-on only; radial `:auto`, unsupported plasma/Raman combinations,
+noise, mixtures, and
 z-dependent configurations remain CPU-selected. On the RTX 5060 Ti it passed
 24/24 with asymmetric direct-stage error `4.262893614543232e-16` and fixed
 full-solve error `2.871085295458848e-15`.
@@ -512,6 +622,52 @@ was `1.712696193041123e-16`, the Julia strong-field ADK-on/off effect was
 `2.786765208889846e-8`, and native-vs-Julia strong-field error was
 `3.253050910467547e-16`.  Below/above-threshold column isolation, invalid
 setup rollback, adaptive rejection, and retry all passed.
+
+### 10.9 Radial RealGrid SDO Raman (Plan 12)
+
+Plan 12 extends the same RealGrid radial pipeline with one scalar-density SDO
+`RamanPolarField` and no plasma. Intensity, polarization, and Hilbert scratch
+are contiguous `(n_time_over, n_r)` buffers. The ADE kernel receives one series
+per radial column and initializes oscillator state inside that series thread;
+`thg=false` uses a batched c2c Hilbert plan plus a column-local parity mask.
+Raman is accumulated before the radial time window and QDHT multiplication,
+with no host transfer during an RHS evaluation. The gate accepts 1–64 flattened
+SDO oscillators (N₂ vibration, rotation=49, and rotation+vibration=50), keeps
+radial `:auto` false, and rejects plasma+Raman, EnvGrid Raman in this
+RealGrid path, mixtures, and noise.
+
+`test/test_native_cuda_radial_raman.jl` covers eligibility, both THG modes,
+vibration-only and N₂ rotational responses, direct stages, fixed solves,
+column isolation, non-vacuity, and rejected adaptive steps. Its CPU controls
+and `test/test_native_radial_raman.jl` passed; strict CUDA execution is still
+pending a matching driver because this host reports `cuInit failed: 100`
+(no CUDA device in the current sandbox; prior elevated runs reported the
+userspace/kernel mismatch `803`).
+
+### 10.10 Radial EnvGrid SDO Raman (Plan 13)
+
+Plan 13 extends the Plan 09 full-spectrum radial EnvGrid pipeline with one
+scalar-density SDO `RamanPolarEnv`. The existing complex radial time buffer is
+used directly: `raman_intensity_env_kernel` computes `0.5*|E|²` for every
+`(time, radial-column)` cell, one `raman_ade_kernel` thread integrates each
+column's oscillator series, and `raman_accumulate_env_kernel` adds
+`density*E*P` to the complex `pto`. There is no Hilbert transform or carrier
+`thg` branch. The Raman stage is resident between envelope Kerr and the shared
+time-window/QDHT/forward-c2c tail.
+
+The gate admits one EnvGrid `RamanPolarEnv` with a non-empty combined SDO
+response of 1–64 flattened oscillators, paired with one plain Kerr response.
+EnvGrid plasma, intermediate-broadening (`:SiO2`) Raman, mixtures, noise, and
+radial `:auto` remain CPU-selected. The focused test is
+`test/test_native_cuda_radial_env_raman.jl`; it covers vibration/rotation
+capacity and dispatch, complex two-column isolation, direct stages, fixed
+solve/non-vacuity, and rejected adaptive steps. CPU radial EnvGrid Raman
+coverage remains in `test/test_native_radial_env_raman.jl`.
+
+Strict CUDA construction is still pending on this host: the focused strict
+run reaches all 10 eligibility checks, then fails at `cuInit failed: 100`.
+No hardware tolerance is claimed until the test is rerun on a matching CUDA
+device/driver host.
 
 ---
 

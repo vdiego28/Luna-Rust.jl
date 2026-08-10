@@ -1,11 +1,11 @@
 # Amalthea.jl
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20359893.svg)](https://doi.org/10.5281/zenodo.20359893)
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://vdiego28.github.io/Amalthea.jl)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://vdiego28.github.io/Amalthea.jl/stable/)
 [![CI](https://github.com/vdiego28/Amalthea.jl/actions/workflows/run_tests.yml/badge.svg)](https://github.com/vdiego28/Amalthea.jl/actions/workflows/run_tests.yml)
 
 > [!IMPORTANT]
-> **Amalthea.jl** is a performance-focused fork of [Luna.jl](https://github.com/LupoLab/Luna.jl) that replaces performance-critical numerical kernels with a native Rust backend (`amalthea`). The Julia high-level interface is fully preserved and backwards-compatible.
+> **Amalthea.jl** is a performance-engineering fork of [Luna.jl](https://github.com/LupoLab/Luna.jl) that provides a native Rust backend (`amalthea`) for numerical kernels. Its retained Julia interfaces are intended to remain API-compatible with Luna.jl, with compatibility checked by Julia-oracle/native equivalence tests—not promised unconditionally as the hard fork evolves.
 
 Amalthea.jl is a flexible platform for the simulation of nonlinear optical dynamics—both in waveguides (such as optical fibres) and free-space geometries—using the unidirectional pulse propagation equation (UPPE) and its approximate forms, such as the commonly used generalised nonlinear Schrödinger equation (GNLSE). Some of the key features of Amalthea.jl:
 
@@ -38,11 +38,20 @@ There are two ways of using Amalthea.jl:
 1. A very simple high-level interface for the most heavily optimised applications: propagation in gas-filled hollow capillary fibres and hollow-core photonic crystal fibres (consisting of the function [`prop_capillary`](#quickstart) and some helper functions to create input pulses); or propagation of simple GNLSE simulations (consisting of the function [`prop_gnlse`](#gnlse)).
 2. A low-level interface which allows for full control and customisation of the simulation parameters, the use of custom waveguide modes and gas fills (including gas mixtures), and free-space propagation simulations.
 
-For a short introduction on how to use the simple interface, see the [Quickstart](#quickstart) or [GNLSE](#gnlse) sections below. More information, including on the internals of Amalthea.jl, can be found in the [Documentation](https://vdiego28.github.io/Amalthea.jl).
+For a short introduction on how to use the simple interface, see the [Quickstart](#quickstart) or [GNLSE](#gnlse) sections below. More information, including on the internals of Amalthea.jl, can be found in the [Documentation](https://vdiego28.github.io/Amalthea.jl/stable/).
 
 ## Relationship to Luna.jl
 
 Amalthea.jl is an independent hard fork of [Luna.jl](https://github.com/LupoLab/Luna.jl), not a set of changes intended to land upstream. The Julia-level API, physics models, and much of the original interface layer come directly from that project; what Amalthea.jl adds is a from-scratch Rust numerical backend (`amalthea/`) that the compute-critical kernels are offloaded to, plus a resident native-Rust stepper that removes the per-step Julia↔Rust callback round-trip entirely (see [`docs/dev/native-port/ARCHITECTURE.md`](docs/dev/native-port/ARCHITECTURE.md)).
+
+Compatibility is tested against the fork's retained Julia implementation,
+which serves as the Luna-compatible numerical oracle. The hosted matrix runs
+on Linux, macOS, and Windows with Julia LTS/current/pre-release and covers
+mode-averaged, radial, modal, and free-space propagation on `RealGrid` and
+`EnvGrid`, including single-step and full-solve Julia/native comparisons.
+Amalthea does not continuously test against the tip of upstream Luna.jl, so
+this is a tested compatibility intention rather than a claim that every
+current or future Luna API behaves identically.
 
 Two things worth being explicit about:
 
@@ -62,47 +71,104 @@ The `amalthea` crate provides the high-performance numerical engine that powers 
   CI. `dispatch.rs` detects hardware for its own tests but is not a
   propagation dispatcher, and there is no Vulkan implementation.
 - **Parallelised transforms**: the quasi-discrete Hankel transform (QDHT) used in free-space propagation is parallelised with [Rayon](https://github.com/rayon-rs/rayon).
-- **Raman solver**: the time-domain Raman solver uses an explicit matrix-exponential integrator with AVX2 optimisation.
+- **Raman solver**: the time-domain Raman solver uses an explicit matrix-exponential integrator, with an AVX2 fast path on `x86_64` and portable code on ARM64 and other CPUs.
 - **Cross-platform**: builds and runs on Linux, macOS, and Windows, including
-  the `Scans.jl`/`QueueExec` file-locking path (`LockFileEx`/`UnlockFileEx` on
-  Windows), which is exercised by CI on every push (`windows-2025-vs2026`
-  runner). See `docs/dev/BACKLOG.md`'s "Windows scan-lock validation" entry.
+  Linux ARM64 and Apple Silicon. CUDA is optional; ordinary installations use
+  the resident CPU backend and do not need an NVIDIA GPU or CUDA toolkit. The
+  `Scans.jl`/`QueueExec` file-locking path also supports Windows through
+  `LockFileEx`/`UnlockFileEx`, exercised by CI on every push
+  (`windows-2025-vs2026` runner). See `docs/dev/BACKLOG.md`'s "Windows
+  scan-lock validation" entry.
 
 The Rust backend is called transparently via Julia's `ccall` interface; no Rust knowledge is needed to use Amalthea.jl.
 
-## Installation
+## Performance and reproducible comparison
 
-Amalthea.jl requires Julia v1.10 or later, which can be obtained from [here](https://julialang.org/downloads/). In a Julia terminal, to install Amalthea.jl enter the package manager with `]` and run:
+The native backend is a performance-engineering project, not a guarantee that
+every workload is faster on every machine. The public comparison uses the
+same Amalthea checkout twice: once through the retained Luna-compatible Julia
+oracle and once through the resident native CPU backend. This isolates backend
+cost without conflating it with dependency or API differences from a separate
+upstream Luna.jl installation.
 
-```julia
-]
-add https://github.com/vdiego28/Amalthea.jl
+For the README quickstart workload on 2026-08-10, the native path was slightly
+slower on the measured host:
+
+| Version and host | Julia oracle | Native CPU | Julia/native ratio | Final-field relative error |
+|---|---:|---:|---:|---:|
+| `v1.0.3` (`65489dd`), Linux `x86_64`, AMD Zen 3 (`znver3`), Julia 1.12.6, one thread | 0.986 s | 1.113 s | 0.885× | 1.66e-9 |
+
+These are medians of five warmed complete solves for a 125 μm × 3 m helium
+capillary at 1 bar, 800 nm, 10 fs, and 120 μJ, with Kerr and PPT plasma on and
+Raman/shot noise off. The result is reported precisely because it does not
+support a blanket speedup claim. Hardware and simulation shape matter; run the
+comparison for your own target:
+
+```bash
+JULIA_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+AMALTHEA_BENCHMARK_TRIALS=5 \
+julia --startup-file=no --project test/benchmark_julia_vs_native.jl
 ```
 
-This will install and precompile Amalthea.jl and all its dependencies (including the native Rust backend, `amalthea`).
+The script prints every sample and refuses to report a ratio unless the two
+final fields agree within the repository's `1e-6` full-solve tier. The
+[GitHub Pages root](https://vdiego28.github.io/Amalthea.jl/) is a separate
+native-step regression dashboard; it tracks changes over commits and is not a
+Luna-versus-Amalthea comparison.
 
-**On the Rust toolchain requirement.** For the three platforms Amalthea.jl
-intends to publish release binaries for (Linux x86_64, macOS aarch64/Apple
-Silicon, Windows x86_64), the build step (`deps/build.jl`) first attempts to
-download a prebuilt `amalthea` library matching the package version, then falls
-back to compiling from source. [Version
-1.0.1](https://github.com/vdiego28/Amalthea.jl/releases/tag/v1.0.1) publishes
-canonical `libamalthea-<triple>` binaries and a verified checksum manifest.
-Version 1.0.0's binaries used the pre-rename `libluna_rust-<triple>` names;
-the installer recognises those names only for that legacy release. A
-`Pkg.add` of either released version on those platforms therefore needs no
-Rust toolchain.
+## Installation
 
-**Building from a git checkout always compiles from source** — a working
-[Rust toolchain](https://rustup.rs/) (cargo >= 1.85) on `PATH` is required for
-`Pkg.develop`, a clone of this repo, and CI. A checkout's sources run ahead of
-the last tagged release while `Project.toml` still names that release, so
-downloading its binary would install a library older than the FFI calls in
-`src/`. `AMALTHEA_RUST_SKIP_DOWNLOAD=1` forces the source-build path for a
-registered install too. Development branches use a `-DEV` package version so
-source archives cannot accidentally select the preceding release's binary.
+Amalthea.jl requires Julia 1.10 or newer. It is not yet registered in Julia's
+General registry, so install the latest tagged release directly from GitHub
+(currently `v1.0.3`):
 
-If `Pkg.build`/`Pkg.instantiate` fails, look for a `Failed to find/compile the Rust library` error from the build script — it names the actual problem and how to fix it. The most common cause is simply that `cargo` isn't installed or isn't on `PATH`; installing it via [rustup.rs](https://rustup.rs/) and re-running `Pkg.build("Amalthea")` resolves it.
+```julia
+pkg> add https://github.com/vdiego28/Amalthea.jl#v1.0.3
+```
+
+Check the [Releases page](https://github.com/vdiego28/Amalthea.jl/releases)
+and substitute a newer stable tag when available.
+
+The normal installation is CPU-only and requires neither CUDA nor an NVIDIA
+GPU. The installer downloads a checksum-verified native library when the
+release contains one, otherwise it compiles from source with Rust 1.85 or
+newer:
+
+| Platform | Release binary |
+|---|---|
+| Linux `x86_64` | Yes |
+| Linux ARM64/AArch64 | Yes |
+| macOS Apple Silicon | Yes |
+| Windows `x86_64` | Yes |
+| Intel macOS, Windows ARM64, ARM32, musl Linux, other systems | Source build; not release-tested |
+
+Platforms without a release binary build from source and therefore require
+[rustup](https://rustup.rs/). A git checkout or the `main` development branch
+also always builds from source:
+
+```julia
+using Pkg
+Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="main")
+```
+
+To compile and enable the experimental CUDA backend, build in a fresh Julia
+process and restart Julia afterward:
+
+```julia
+ENV["AMALTHEA_CUDA_BUILD"] = "required"
+using Pkg
+Pkg.build("Amalthea")
+```
+
+```julia
+ENV["AMALTHEA_USE_RUST_CUDA_NATIVE"] = "1"
+ENV["AMALTHEA_NATIVE_GPU"] = "on"
+using Amalthea
+```
+
+See the complete [installation and configuration guide](docs/src/installation.md)
+for Linux, macOS, Windows, ARM, source prerequisites, CPU/CUDA switching,
+environment-variable syntax, updating, verification, and troubleshooting.
 
 ## Quickstart
 
@@ -131,7 +197,7 @@ julia> output["Eω"]
 The shape of this array is `(Nω x Nz)` where `Nω` is the number of frequency samples and `Nz` is the number of steps that were saved during the propagation. By default, `prop_capillary` will solve the full-field (carrier-resolved) UPPE. In this case, the numerical Fourier transforms are done using `rfft`, so the number of frequency samples is `(Nt/2 + 1)` with `Nt` the number of samples in the time domain.
 
 ### Multi-mode propagation
-`prop_capillary` accepts many keyword arguments (for a full list see the [documentation](https://vdiego28.github.io/Amalthea.jl/dev/interface.html)) to customise the simulation parameters and input pulse. One of the most important is `modes`, which defines whether mode-averaged or multi-mode propagation is used, and which modes are included. By default, `prop_capillary` considers mode-averaged propagation in the fundamental (HE₁₁) mode of the capillary, which is fast and simple but less accurate, especially at high intensity when self-focusing and photoionisation play important roles in the propagation dynamics.
+`prop_capillary` accepts many keyword arguments (for a full list see the [documentation](https://vdiego28.github.io/Amalthea.jl/stable/interface.html)) to customise the simulation parameters and input pulse. One of the most important is `modes`, which defines whether mode-averaged or multi-mode propagation is used, and which modes are included. By default, `prop_capillary` considers mode-averaged propagation in the fundamental (HE₁₁) mode of the capillary, which is fast and simple but less accurate, especially at high intensity when self-focusing and photoionisation play important roles in the propagation dynamics.
 
 Mode-averaged propagation is activated using `modes=:HE11` (the default) or replacing the `:HE11` with a different mode designation (for mode-averaged propagation in a different mode). To run the same simulation as above with the first four modes (HE₁₁ to HE₁₄) of the capillary, set `modes` to `4` (this example also uses smaller time and frequency windows to make the simulation run a little faster):
 ```julia
@@ -175,7 +241,7 @@ PyPlot.Figure(PyObject <Figure size 1700x1000 with 1 Axes>)
 ![Propagation example 4](assets/readme_multiModeSpec.png)
 (Compare this to the mode-averaged case above and note the important differences, e.g. the appearance of additional ultraviolet dispersive waves in higher-order modes.)
 
-More plotting functions are available in the [`Plotting`](https://vdiego28.github.io/Amalthea.jl/dev/modules/Plotting.html) module, including for propagation statistics (`Plotting.stats(output)`) and spectrograms (`Plotting.spectrogram()`)
+More plotting functions are available in the [`Plotting`](https://vdiego28.github.io/Amalthea.jl/stable/modules/Plotting.html) module, including for propagation statistics (`Plotting.stats(output)`) and spectrograms (`Plotting.spectrogram()`)
 
 ### Output processing
 The `Processing` module contains many useful functions for more detailed processing and manual plotting, including:
@@ -210,7 +276,7 @@ The [examples folder](examples/) contains complete simulation examples for a var
 At its core, Amalthea.jl is extremely flexible, and the simple interface using `prop_capillary` only exposes part of what it can do. There are lots of examples in the [low-level interface examples folder](examples/low_level_interface). A representative subset of these (covering mode-averaged, modal, GNLSE, Raman, mixture, and step-index propagation) is smoke-tested in CI at a shrunk fibre length — see `test/test_examples_smoke.jl` — but most of the folder is not actively maintained and not guaranteed to run. As a side effect of its flexibility, it is quite easy to make mistakes when using the low-level interface. If you have trouble with this interface, [open an issue](https://github.com/vdiego28/Amalthea.jl/issues/new) with as much detail as possible.
 
 ## Running parameter scans
-Amalthea.jl comes with a built-in interface which allows for the running of single- and multi-dimensional parameter scans with very little additional code. An example can be found in the [examples folder](examples/simple_interface/scan.jl) and more information is available in the [documentation](https://vdiego28.github.io/Amalthea.jl/dev/scans.html).
+Amalthea.jl comes with a built-in interface which allows for the running of single- and multi-dimensional parameter scans with very little additional code. An example can be found in the [examples folder](examples/simple_interface/scan.jl) and more information is available in the [documentation](https://vdiego28.github.io/Amalthea.jl/stable/scans.html).
 
 ## New to Julia?
 There are many resources to help you learn Julia. A good place to start is [Julia Academy](https://juliaacademy.com/) which has several courses for learning Julia depending on your current experience. There are additional resources linked from the [Julia website](https://julialang.org/learning/).
@@ -237,10 +303,10 @@ If you use Amalthea.jl in your research, please cite it using the following DOI:
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20359893.svg)](https://doi.org/10.5281/zenodo.20359893)
 
 ```bibtex
-@software{valenzuela_berrios_2025_amalthea,
+@software{valenzuela_berrios_2026_amalthea,
   author    = {Valenzuela Berríos, Diego Andrés},
   title     = {Amalthea.jl},
-  year      = {2025},
+  year      = {2026},
   publisher = {Zenodo},
   doi       = {10.5281/zenodo.20359893},
   url       = {https://doi.org/10.5281/zenodo.20359893}

@@ -1,7 +1,11 @@
 name = "Amalthea"
 uuid = "2a0a82e6-4dc7-4219-a2c1-d2369ab6895d"
-version = "1.0.3-DEV"
-authors = ["chrisbrahms <38351086+chrisbrahms@users.noreply.github.com>"]
+version = "1.0.4-DEV"
+authors = [
+    "Christian Brahms (original Luna.jl author)",
+    "John C. Travers (original Luna.jl author)",
+    "Diego Andrés Valenzuela Berríos (Amalthea.jl maintainer)",
+]
 
 [deps]
 ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"

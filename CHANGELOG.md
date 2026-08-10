@@ -4,6 +4,48 @@ All notable changes to Amalthea.jl are documented here. This project is a
 fork of [Luna.jl](https://github.com/LupoLab/Luna.jl); versions below are
 this fork's own, starting from the point the Rust backend was introduced.
 
+## [Unreleased]
+
+### Changed
+- Corrected public documentation, authorship, compatibility, registry, and
+  historical hardware-dispatch claims after the v1.0.3 release audit.
+- Added a reproducible, equivalence-checked Julia-oracle versus resident-native
+  CPU benchmark and published its non-speedup result without extrapolating to
+  other workloads or hardware.
+
+## [1.0.3]
+
+GPU geometry expansion and portable-installation update for the native backend.
+
+### Added
+- Explicit CUDA-resident support for radial `RealGrid`/`EnvGrid` SDO Raman,
+  modal `RealGrid`/`EnvGrid` Kerr, modal `RealGrid` SDO Raman, and free-space
+  `RealGrid`/`EnvGrid` Kerr.
+- Free-space `RealGrid` CUDA support for PPT plasma, thresholded ADK, and SDO
+  Raman, with independent resident state for every transverse time series.
+- CPU-only Linux ARM64 release binaries and a native ARM64 package-build/FFI
+  smoke job in the standing test workflow.
+- A cross-platform installation and configuration guide covering Linux,
+  macOS, Windows, ARM, source fallbacks, and optional CUDA builds.
+
+### Changed
+- Package and release builds now default to CPU-only operation and never
+  require CUDA or probe `nvcc`; CUDA is enabled explicitly with
+  `AMALTHEA_CUDA_BUILD=required`.
+- Prebuilt selection now matches the exact OS/architecture pair. Unsupported
+  platforms compile from source instead of receiving a mismatched binary.
+- CUDA radial, modal, and free-space additions remain explicit-on while their
+  production-shaped automatic-dispatch thresholds are unmeasured.
+
+### Fixed
+- Preserved both retained spectral halves in oversampled modal and free-space
+  `EnvGrid` CUDA transforms.
+- Released the free-space c2c cuFFT plan during final CUDA teardown.
+- Serialized cold-depot Julia worker precompilation before parallel CI bucket
+  startup, preventing shared-cache bootstrap races.
+- Added an actionable diagnostic when CUDA is requested from a CPU-only native
+  library.
+
 ## [1.0.2]
 
 Correctness, safety, and GPU-physics update for the native backend.
@@ -72,10 +114,19 @@ Correctness, compatibility, and performance update for the native backend.
 
 ## [1.0.0]
 
-First stable release. Amalthea.jl keeps Luna.jl's Julia interface fully
-backwards-compatible while replacing performance-critical numerical kernels
-with a native Rust backend (`luna-rust`), called transparently via `ccall` —
-no Rust knowledge is required to use the package.
+> **Historical accuracy note (added 2026-08-10):** the original v1.0.0 text
+> overstated both compatibility and hardware dispatch. Amalthea intends to
+> retain Luna-compatible APIs and tests its Julia/native paths for numerical
+> equivalence, but a moving hard fork cannot promise unconditional backwards
+> compatibility. The `dispatch.rs` CUDA/Vulkan/CPU cascade described below
+> was detection-only and was not wired into propagation; no Vulkan backend
+> existed. The v1.0.0 Zenodo/GitHub prose also incorrectly said Amalthea was
+> registered in Julia General. It was not and remains installed from GitHub.
+
+First stable release. Amalthea.jl retained Luna.jl's high-level Julia
+interface while replacing performance-critical numerical kernels with a
+native Rust backend (`luna-rust`), called transparently via `ccall` — no Rust
+knowledge is required to use the package.
 
 ### Added
 - **Native-Rust resident stepper** (`RustNativeStepper` / `NativeSim`): the
@@ -87,9 +138,11 @@ no Rust knowledge is required to use the package.
   z-dependent (graded-core, tapered, multi-point gradient) linear operators;
   and shot noise. Falls back to the Julia stepper automatically for any
   configuration outside this scope (`NativeIneligible`).
-- **Runtime hardware dispatch**: automatic selection of CUDA → Vulkan →
-  AVX-512/Apple AMX → AVX2/NEON → portable scalar, including an opt-in
-  GPU-resident backend (`AMALTHEA_USE_RUST_CUDA_NATIVE=1`).
+- **Runtime hardware detection (historical correction)**: `dispatch.rs`
+  detected CUDA, Vulkan, AVX-512/Apple AMX, AVX2/NEON, and portable-scalar
+  capabilities, but this cascade did not dispatch propagation and there was
+  no Vulkan implementation. CUDA-resident propagation was a separate,
+  explicitly opt-in path (`AMALTHEA_USE_RUST_CUDA_NATIVE=1`).
 - **Per-kernel Rust acceleration** (opt-in via `AMALTHEA_USE_RUST_*` toggles,
   used independently of the resident stepper): PPT ionisation rate,
   time-domain Raman (ADE exponential integrator), Zeisberger/Marcatili

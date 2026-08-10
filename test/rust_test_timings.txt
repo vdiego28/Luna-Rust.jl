@@ -8,6 +8,7 @@ amalthea/tests/test_julia_ffi.jl 18.4
 amalthea/tests/test_scans_io.jl 19.2
 amalthea/tests/test_stepper_dispatch.jl 17.9
 test_backend_config.jl 26.7
+test_install_policy.jl 20.0
 test_dispersion_rust.jl::Rust MarcatiliMode dispersion equivalence 26.2
 test_dispersion_rust.jl::Rust Zeisberger dispersion equivalence 27.7
 test_ionisation_rust.jl 20.6
@@ -15,11 +16,21 @@ test_native_adk_ionisation.jl 27.8
 test_native_cuda.jl::Native-Rust GPU-resident stepper (CUDA, mode-avg ADK plasma) 31.4
 test_native_cuda.jl::Native-Rust GPU-resident stepper (CUDA, mode-avg Kerr) 25.9
 test_native_cuda.jl::Native-Rust GPU-resident stepper (CUDA, mode-avg Kerr+plasma) 31.4
+test_native_cuda_modal.jl 5.0
+test_native_cuda_modal_env.jl 12.0
+test_native_cuda_modal_raman.jl 28.8
+test_native_cuda_free.jl 18.9
+test_native_cuda_free_env.jl 20.5
+test_native_cuda_free_ppt.jl 35.8
+test_native_cuda_free_adk.jl 31.5
+test_native_cuda_free_raman.jl 132.1
 test_native_cuda_raman.jl 20.0
 test_native_cuda_radial.jl 3.9
 test_native_cuda_radial_adk.jl 19.5
 test_native_cuda_radial_env.jl 3.9
 test_native_cuda_radial_plasma.jl 34.3
+test_native_cuda_radial_raman.jl 30.0
+test_native_cuda_radial_env_raman.jl 30.0
 test_native_default_workload.jl 39.7
 test_native_dense_order5.jl::Native-Rust dense output: GPU-resident backend (BACKLOG S5 item 3) 28.4
 test_native_dense_order5.jl::Native-Rust dense output: order-5 continuous extension (BACKLOG S5 item 3) 27.9

@@ -1,8 +1,7 @@
 name: Release prebuilt amalthea binaries
 
-# Triggered by the same `vX.Y.Z` tags TagBot.yml pushes after a Julia
-# registry release, so a release's binaries always match the Project.toml
-# version that deps/build.jl (try_download_prebuilt) looks up.
+# Triggered by a `vX.Y.Z` release tag, so the published binaries always match
+# the Project.toml version that deps/build.jl (try_download_prebuilt) looks up.
 on:
   push:
     tags:
@@ -22,6 +21,11 @@ jobs:
         include:
           - os: ubuntu-latest
             triple: x86_64-unknown-linux-gnu
+            libname: libamalthea.so
+          # Use the oldest hosted ARM64 image available so the glibc baseline
+          # is compatible with more deployed Linux ARM64 systems.
+          - os: ubuntu-22.04-arm
+            triple: aarch64-unknown-linux-gnu
             libname: libamalthea.so
           - os: macos-latest
             triple: aarch64-apple-darwin
@@ -45,6 +49,7 @@ jobs:
         working-directory: amalthea
         env:
           RUSTFLAGS: ""
+          AMALTHEA_CUDA_BUILD: "off"
 
       - name: Stage asset (Unix)
         if: runner.os != 'Windows'

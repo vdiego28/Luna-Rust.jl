@@ -1,6 +1,7 @@
 # Luna feature plan 17 — CUDA free-space RealGrid Kerr foundation
 
-Status: ready after plan 03; standing CUDA CI is strongly preferred.
+Status: complete (2026-08-08). Depends on plan 03; standing CUDA CI remains
+strongly preferred.
 
 ## Outcome
 
@@ -41,3 +42,18 @@ Update docs and append exact dimension/scaling evidence to `PORT_LOG.md`.
 ## Non-goals
 
 EnvGrid, plasma, Raman, shot noise, z-dependent norm, or auto dispatch.
+
+## Implementation complete
+
+`CudaNativeSim` now stages a transactional `FreeSetup` with separate
+`(n_time_over,n_y,n_x)` real scratch, `(n_time_over/2+1,n_y,n_x)` complex
+scratch, Julia's transferred free-space normalization, and independent 3-D
+cuFFT D2Z/Z2D plans. cuFFT receives `(n_x,n_y,n_time_over)`, which preserves
+Julia's column-major `(t,y,x)` layout and makes time the halved dimension.
+The resident RHS reuses the established column-major expand/window/crop
+kernels around one inverse and one forward 3-D transform, with the explicit
+`1/(n_time_over*n_y*n_x)` inverse normalization. Julia eligibility admits only
+constant-linop/constant-norm RealGrid scalar Kerr and keeps CUDA `:auto` false.
+The focused strict hardware test covers `n_y != n_x`, nonsymmetric spectral
+data, non-vacuity, fixed/adaptive/rejected steps, invalid dimensions, and
+transactional replacement setup.

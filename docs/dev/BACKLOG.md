@@ -7,26 +7,32 @@ Deferred work and known issues for Amalthea.jl. Severity: 🔴 correctness · �
 > [`ARCHIVE.md`](ARCHIVE.md) with its section names unchanged. Cross-references
 > below to a phase, to S1/S4, or to "Done (recent)" resolve there.
 
-## Start here — current resume queue (2026-08-02)
+## Start here — current resume queue (2026-08-10)
 
 This is the authoritative short queue. The long sections below retain design
 history and measured evidence, but older words such as "next", "not started",
 or "verified" inside a superseded narrative do not outrank this list.
 
-> **Current handoff:** `main` is `4925c67` (`1.0.3-DEV`), which merges the
-> published `v1.0.2` release branch after its development-metadata bump. The
-> GPU adaptive
-> repair/parallel PPT scan branch and the Windows scheduler portability/
-> visibility hotfix are merged, and their remote branches were deleted after
-> ancestry checks. Main test run `30642534593` passed all **16/16** jobs and
-> documentation run `30642537095` passed. `origin` now has only `main` and the
-> required `gh-pages` deployment branch. The live queue is deliberately short:
-> standing required-CUDA CI remains deferred by the lead (item 2 below).
-> Broader mode-averaged SDO Raman was completed and hardware-verified on
-> 2026-08-02; radial RealGrid and EnvGrid scalar-Kerr GPU slices are now also
-> complete, while remaining radial/modal/free-space GPU scope stays outside
-> this work item. Do not recreate a
-> completed integration branch as a resume step.
+> **Current handoff:** `v1.0.3` is published from tested commit `65489dd`.
+> Release-candidate run `31334708624` passed all 17 substantive jobs,
+> including native Linux ARM64 installation/FFI; release workflow
+> `31383860726` published four CPU binaries plus `SHA256SUMS.txt`, and every
+> downloaded checksum passed. Documentation workflow `31383860719` deployed
+> the stable manual, and redundant tag test run `31383860700` passed its full
+> matrix. Post-release work advances metadata to `1.0.4-DEV` /
+> `1.0.4.dev0` and corrects public authorship, compatibility, dispatch,
+> registry, documentation-link, and benchmark claims. The repository and
+> GitHub v1.0.0 release are corrected; Zenodo v1.0.0 record `21327636` still
+> needs its owner to apply the same metadata correction because no Zenodo
+> credential is available here. Standing required-CUDA CI remains separately
+> deferred by the lead.
+
+> **Release `v1.0.3` — PUBLISHED 2026-08-10:** this release expands explicit
+> CUDA support across radial, modal, and free-space geometries; includes the
+> reviewed EnvGrid spectral-half and cuFFT teardown repairs; and makes ordinary
+> installation CPU-only, architecture-safe, and available as a Linux ARM64
+> prebuilt. The release is public, non-draft, and non-prerelease; its four
+> downloaded binaries pass the published checksum manifest.
 
 > The upstream Luna.jl review is recorded in
 > [`native-port/UPSTREAM_TRIAGE.md`](native-port/UPSTREAM_TRIAGE.md). Its
@@ -144,8 +150,8 @@ or "verified" inside a superseded narrative do not outrank this list.
    symbol, added after the tag). Root cause is the version keying, not the
    name matching: `Project.toml` still reads `1.0.0` while `main`'s sources
    are far ahead of it. `deps/build.jl` now refuses the download entirely for
-   a source checkout (`_is_source_checkout()`, `.git` present — registered
-   `Pkg.add` installs keep the fast path), and both workflows set
+   a source checkout (`_is_source_checkout()`, `.git` present — installed
+   tagged packages keep the fast path), and both workflows set
    `AMALTHEA_RUST_SKIP_DOWNLOAD=1` at workflow level. **Closed
    2026-07-28:** immediately after tagging `v1.0.1`, `main` moved to
    `Project.toml` version `1.0.2-DEV` (and Python `1.0.2.dev0`), so source
@@ -889,7 +895,7 @@ then reproducing the crash directly:**
   must be **bit-identical**, not merely within tolerance — a stronger,
   more testable guarantee than typical parallel-code equivalence.
 
-### 🟡 S3 — GPU-resident propagation (suggestion 1) — mode-averaged both-grid Kerr/Raman plus radial RealGrid/EnvGrid scalar Kerr and RealGrid plasma are supported; broader scope remains unbuilt
+### 🟡 S3 — GPU-resident propagation (suggestion 1) — mode-averaged both-grid Kerr/Raman plus radial RealGrid/EnvGrid scalar Kerr, RealGrid plasma, and radial RealGrid/EnvGrid SDO Raman are supported; broader scope remains unbuilt
 *Large (5+ sessions). Plan's own stated dependency (GPU CI) is **still** not
 met — see "GPU CI coverage" below, and note that item 0 is precisely what
 that gap allowed to happen. This machine has real GPU hardware
@@ -960,8 +966,8 @@ implemented), verified on real hardware, wired behind
    than treated as a TODO to "fix" — the doc previously implied this
    should eventually match §4, which it never needs to. No code changed;
    documentation-only.
-2. 🟡 **PPT plasma done 2026-07-11 (mode-avg only); Raman and radial/modal/
-   free-space remain open; ADK was then open and completed as the narrow
+2. 🟡 **PPT plasma done 2026-07-11 (mode-avg only); broader Raman and radial/modal/
+   free-space scope remains open; ADK was then open and completed as the narrow
    2026-07-31 slice.** The single-thread scan description below is
    historical and was superseded by resume item 12 on 2026-07-27. Added to `CudaNativeSim`
    (`cuda_native.rs`/`kernels.cu`/`cuda.rs`): `set_plasma_params` uploads
@@ -1097,9 +1103,9 @@ implemented), verified on real hardware, wired behind
    CPU-native under `:auto` and CUDA remains explicit via `:on`. The complete
    table and the bounded large-rotational benchmark gotcha are in
    `luna-feature-plans/LUNA_FEATURE_PLAN_05_GPU_RAMAN_AUTO_POLICY.md`.
-   Radial Raman support would still need a segmented/batched extension over
-   columns rather than reusing the one-dimensional mode-averaged launch
-   unchanged.
+   The former radial-Raman gap described here was closed by Plan 12's
+   segmented/batched column launch; this historical note explains why the
+   one-dimensional mode-averaged launcher could not simply be reused.
 5. 🟢 **Raman CUDA coverage landed 2026-08-02** in
    `test/test_native_cuda_raman.jl`: direct stage/non-vacuity checks, fixed
    and rejected-step trajectories, EnvGrid, and `:SiO2` CPU fallback for the
@@ -1164,8 +1170,8 @@ implemented), verified on real hardware, wired behind
    gate remains limited to scalar density, constant linop/norm, one Kerr, and
    one PPT response. The strict focused CUDA test passed 27/27 on the RTX 5060
    Ti, with direct-stage error `1.5647312256418479e-15` and fixed-solve error
-   `4.756600300395168e-16`; radial EnvGrid plasma, ADK, Raman, noise, and
-   automatic dispatch remain deferred. See Plan 10, `GPU.md`, and the latest
+   `4.756600300395168e-16`; radial EnvGrid plasma, ADK, unsupported Raman
+   combinations, noise, and automatic dispatch remain deferred. See Plan 10, `GPU.md`, and the latest
    `PORT_LOG.md` entry.
 10. 🟢 **Plan 11 — radial RealGrid thresholded ADK — DONE 2026-08-02.** The
    radial RealGrid CUDA slice now accepts one thresholded `IonRateADK` beside
@@ -1178,6 +1184,123 @@ implemented), verified on real hardware, wired behind
    `3.253050910467547e-16`. Unthresholded ADK, EnvGrid plasma, and radial
    automatic dispatch remain CPU-selected. See Plan 11, `GPU.md`, and the
    latest `PORT_LOG.md` entry.
+11. 🟢 **Plan 12 — radial RealGrid SDO Raman — DONE 2026-08-04.**
+   `CudaNativeSim` now sizes Raman intensity/polarization/Hilbert scratch as
+   `n_time_over*n_r`, launches one independent resident ADE series per radial
+   column, and uses a batched c2c Hilbert plan with a column-local analytic
+   signal mask for `thg=false`. Julia eligibility admits only one scalar-density
+   RealGrid `RamanPolarField` made from 1–64 flattened SDO oscillators; plasma,
+   EnvGrid Raman, mixtures, noise, and radial `:auto` remain CPU-selected.
+   The focused item is `test/test_native_cuda_radial_raman.jl`; CPU radial
+   Raman remains covered by `test/test_native_radial_raman.jl`. Hardware
+   Hardware verification passed on the RTX 5060 Ti: the focused strict CUDA
+   item passed 30/30, with direct-stage errors `1.21e-15`–`1.23e-15` and
+   fixed-solve errors `2.42e-16` and `2.60e-16`. See Plan 12, `GPU.md`, and
+   the latest `PORT_LOG.md` entry.
+12. 🟢 **Plan 13 — radial EnvGrid SDO Raman — DONE 2026-08-04.** `CudaNativeSim` now reuses the Plan 09 complex
+   radial buffers and Plan 12's per-column ADE launch for one scalar-density
+   `RamanPolarEnv`: direct `0.5*abs2(E)` intensity, one series per radial
+   column, and complex `density*E*P` accumulation before the shared window and
+   QDHT/c2c tail. Julia eligibility admits only matching EnvGrid SDO Raman
+   (1–64 flattened oscillators), keeps radial `:auto` false, and rejects
+   plasma, intermediate broadening, mixtures, and noise. CPU radial EnvGrid
+   Raman passes its focused equivalence/non-vacuity suite. Strict hardware
+   verification passed the focused Plan 13 CUDA item and the complete strict
+   Rust group; see Plan 13, `GPU.md`, and the focused
+   `test_native_cuda_radial_env_raman.jl` item.
+13. 🟢 **Plan 14 — modal RealGrid scalar Kerr — DONE 2026-08-04.** The CUDA
+   backend now evaluates constant-radius Marcatili/Zeisberger/Vincetti modal
+   fields through resident synthesis, batched cuFFT, scalar/vector Kerr,
+   windowing, and modal projection, while host libcubature retains adaptive
+   node placement. Both `full=false`/`true` and `npol=1`/`2` are covered, with
+   explicit-on eligibility and modal `:auto` disabled. The strict focused item
+   passed 37/37 on the RTX 5060 Ti: fixed-node and direct-stage errors were
+   `1.11e-15`–`1.41e-15`, the two-mode fixed-solve error was `4.07e-16`, and
+   the rejected adaptive trial preserved state. HE11→HE12 transfer was
+   `8.49e-6`; the Kerr on/off control was `2.53e-2`. See Plan 14, `GPU.md`,
+   and `test/test_native_cuda_modal.jl`.
+14. 🟢 **Plan 15 — modal EnvGrid scalar Kerr — DONE 2026-08-08.** The modal
+   CUDA point evaluator now uses resident batched c2c transforms and complex
+   envelope scratch for EnvGrid, with the exact low/high spectrum expansion
+   and crop plus scalar/vector `Kerr_env` formulas. Both cubature branches and
+   `npol=1|2` passed strict hardware verification: fixed-node errors were
+   `4.82e-16`–`6.12e-16`, direct-stage errors `3.07e-16`–`3.27e-16`, and the
+   fixed-solve error `5.97e-16`; HE11→HE12 transfer was `8.41e-6` and the
+   Julia Kerr-on/off control was `0.0252`. Rejection/retry and adaptive
+   agreement passed, the strict focused Plan 14+15 run was 72/72, and the
+   complete strict Rust group was 43,227/43,227. Modal `:auto`, Raman, plasma,
+   noise, mixtures, tapered radius, and free-space remain excluded. See Plan
+   15, `GPU.md`, and `test/test_native_cuda_modal_env.jl`.
+15. 🟢 **Plan 16 — modal RealGrid scalar SDO Raman — DONE 2026-08-08.** The
+   modal CUDA callback now owns one Raman intensity/ADE/Hilbert series per
+   node in the fixed batch of 32, supports both direct THG `E²` and the
+   batched analytic-signal Hilbert branch, and accumulates Raman before the
+   existing window/projection pipeline. Eligibility admits only scalar
+   RealGrid `npol=1` Kerr plus one flattenable SDO `RamanPolarField` (1–64
+   oscillators); EnvGrid Raman, `npol=2`, plasma, noise, mixtures,
+   intermediate broadening, and modal `:auto` remain excluded. Strict CUDA
+   Plan 16 passed 28/28 with vibrational and 49-oscillator rotational direct
+   stages at ~1.3e-15, fixed-solve error `4.6e-16`, adaptive error `1.3e-16`,
+   and Julia Raman-on/off effect `7.1e-4`. See Plan 16, `GPU.md`, and
+   `test/test_native_cuda_modal_raman.jl`.
+16. 🟢 **Plan 17 — free-space RealGrid scalar Kerr — DONE 2026-08-08.** The
+   CUDA backend now stages a transactional free-space setup with separate
+   real/complex `(t,y,x)` scratch, Julia's transferred free-space
+   normalization, and independent 3-D cuFFT D2Z/Z2D plans. The dimensions are
+   passed as `(n_x,n_y,n_time)` so the halved cuFFT dimension is time while
+   preserving Julia's column-major layout; the resident RHS performs one joint
+   inverse transform, explicit `1/(n_time*n_y*n_x)` scaling, Kerr/windowing,
+   and one joint forward transform before crop/normalization. Eligibility is
+   explicit-only and limited to constant-linop/constant-norm RealGrid scalar
+   Kerr; EnvGrid, z-dependent norm/linop, plasma/Raman/noise, and `:auto`
+   remain excluded. Strict hardware verification passed 28/28 on a non-square
+   `8×6` grid, including nonsymmetric spectral data, non-vacuity, fixed and
+   adaptive trajectories, rejection, invalid dimensions, and transactional
+   setup. See Plan 17, `GPU.md`, and `test/test_native_cuda_free.jl`.
+17. 🟢 **Plan 18 — free-space EnvGrid scalar Kerr — DONE 2026-08-08.** The
+   CUDA free-space setup now stages full-spectrum complex scratch and a joint
+   3-D Z2Z cuFFT plan for EnvGrid, preserving both low/high temporal halves,
+   applying explicit `1/(n_time_over*n_y*n_x)` inverse scaling, scalar
+   `Kerr_env`, windowing, crop, and Julia's transferred normalization. The
+   non-square `8×6` strict CUDA test passed 28/28, including asymmetric
+   complex stage data, fixed/adaptive trajectories, rejected-step preservation,
+   and valid-then-invalid transactional c2c setup. Eligibility remains
+   explicit-only; free-space plasma/Raman/noise, z-dependent norm/linop, and
+   `:auto` remain CPU-selected. See Plan 18, `GPU.md`, and
+   `test/test_native_cuda_free_env.jl`.
+18. 🟢 **Plan 19 — free-space RealGrid PPT plasma — DONE 2026-08-08.** The
+   CUDA free-space RealGrid path now stages PPT rate/fraction/current/
+   polarization scratch for every `(y,x)` series and uses a segmented
+   multi-block prefix scan with series-local offsets before the joint 3-D
+   forward transform. Eligibility admits only constant-linop/constant-norm
+   scalar Kerr plus one PPT response; EnvGrid plasma, ADK, Raman, noise,
+   z-dependent norm/linop, and `:auto` remain CPU-selected. Strict hardware
+   verification passed 28/28 on a non-square `10×8` grid: stage `1.3e-15`,
+   fixed solve `5.0e-16`, adaptive `1.3e-14`, and Julia plasma effect
+   `1.57e-6`. See Plan 19, `GPU.md`, and
+   `test/test_native_cuda_free_ppt.jl`.
+19. 🟢 **Plan 20 — free-space RealGrid thresholded ADK — DONE 2026-08-08.**
+   The CUDA free-space RealGrid path now reuses Plan 19's independent
+   per-`(y,x)` segmented scans with the exact thresholded ADK rate, including
+   non-finite and below-threshold zero semantics. Eligibility admits one
+   thresholded ADK response alongside scalar Kerr; unthresholded ADK,
+   EnvGrid plasma, Raman/noise, z-dependent norm/linop, and `:auto` remain
+   CPU-selected. Strict CUDA verification passed 43/43 on a non-square
+   `10×8` grid: stage errors `1.2e-15`/`1.3e-15`, fixed solve `4.8e-16`,
+   adaptive solve `1.4e-16`, and Julia ADK effect `2.7e-3`. See Plan 20,
+   `GPU.md`, and `test/test_native_cuda_free_adk.jl`.
+20. 🟢 **Plan 21 — free-space RealGrid SDO Raman — DONE 2026-08-09.** The
+   CUDA free-space RealGrid path now sizes resident Raman intensity,
+   polarization, and Hilbert scratch for one independent series per flattened
+   `(y,x)` point and applies the SDO ADE before windowing and the joint 3-D
+   transform. Eligibility admits one scalar `RamanPolarField` beside Kerr,
+   with 1–64 flattenable SDO/rotational oscillators, both THG modes, and
+   rejects EnvGrid Raman, plasma+Raman, noise, mixtures, z-dependent
+   normalization, and `:auto`. Strict hardware verification passed 44/44 on
+   a non-square `10×8` grid: direct stage errors `1.28e-15`–`1.35e-15`,
+   fixed-solve errors `2.62e-16`/`2.68e-16`, and Julia Raman effects
+   `1.18e-3`. See Plan 21, `GPU.md`, and
+   `test/test_native_cuda_free_raman.jl`.
 
 ### 🟢 S5 — Numerics options (suggestions 10, 11, 12) — COMPLETE (all 3 items, closed 2026-07-23)
 *Item 2 done 2026-07-11 (re-scoped). Items 1 and 3 investigated 2026-07-19
@@ -1335,9 +1458,8 @@ had been holding *every* stepper's dense output at first order; see the
      order gain.
 
 ### ⚪ S6 — Distribution & ecosystem (suggestions 9, 13, 14)
-*Items 1-2 are implemented. Item 3 was measured and parked; the live S6 work
-is the v1.0.0 asset-name repair/validation and the example repairs in the
-resume queue.*
+*Items 1-2 are implemented. Item 3 was measured and parked. Item 4 is the live
+ARM64/CPU-only installation hardening designed in `native-port/PLANS.md` §13.*
 1. 🟢 **Done 2026-07-11.** Prebuilt binaries (item 13).
    `.github/workflows/release.yml`: triggered on `v*` tags (same tags
    TagBot.yml pushes after a Julia registry release) or manual dispatch;
@@ -1416,6 +1538,19 @@ resume queue.*
    (the item's stated follow-on) is blocked separately regardless: FFTW
    and HDF5 are both `dlopen`ed native libraries with no general `dlopen`
    equivalent in WASM.
+4. 🟢 **Portable ARM64 and CPU-only installation — COMPLETE 2026-08-10.**
+   A native Linux AArch64 release
+   asset is wired, with architecture-correct installer triple selection so
+   unsupported architectures never receive a
+   mismatched binary, and make package/release builds explicitly CPU-only by
+   default. Direct Cargo development retains automatic CUDA discovery;
+   `AMALTHEA_CUDA_BUILD=required` is the explicit source-build route for the
+   experimental GPU backend. Native ARM64 Julia build + installer/FFI job
+   `93298544991` passed in hosted run `31334708624`; tag workflow
+   `31383860726` then published the Linux AArch64 asset, which passed the
+   downloaded `SHA256SUMS.txt` manifest together with the other three
+   platform binaries.
+   Full design and configuration semantics: `native-port/PLANS.md` §13.
 
 **Current execution order:** use the dated resume queue at the top of this
 file. The older track-order plan has been completed or superseded.

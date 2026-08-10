@@ -69,7 +69,7 @@ see the Modal table below).
 | Response | RealGrid | EnvGrid |
 |---|---|---|
 | Kerr | ✅ (`MarcatiliMode`, `kind ∈ {HE,TE,TM}`, any order, `full=true`or `false`, npol 1-2, tapered or constant radius) | ✅ (npol 1-2, `full=true`/`false`) |
-| Raman (SDO) | ⚠️ npol=1 only | ❌ (native.rs's inline ADE Raman solve only touches real time-domain buffers) |
+| Raman (SDO) | ⚠️ npol=1 only; CUDA Plan 16 is explicit-on scalar RealGrid SDO only | ❌ (modal CUDA Plan 16 is RealGrid-only; CPU native still supports no EnvGrid modal Raman) |
 | Plasma | ❌ native; correct Julia fallback supports npol 1-2, including `full=true` (`test/test_transmodal_vector_plasma.jl`; construct `PlasmaCumtrapz` with an example field matching the N×npol transform shape) | ❌ native |
 | Shot noise (`Emω_noise`) | ❌ (explicitly rejected — `NativeIneligible`) | ❌ |
 | Gas mixtures | ❌ (rejected — non-scalar densityfun) | ❌ |
@@ -80,9 +80,9 @@ see the Modal table below).
 
 | Response | RealGrid | EnvGrid |
 |---|---|---|
-| Kerr | ✅ | ✅ |
-| Plasma (PPT/ADK) | ✅ | ❌ (RealGrid-only) |
-| Raman (SDO) | ✅ | ❌ (RealGrid-only; no `RamanPolarEnv` wiring for free-space) |
+| Kerr | ✅ (CUDA Plan 17 explicit-on for constant-linop/constant-norm scalar RealGrid) | ✅ (CUDA Plan 18 explicit-on for constant-linop/constant-norm scalar EnvGrid) |
+| Plasma (PPT/ADK) | ✅ (CUDA Plans 19–20 add explicit-on free-space PPT and thresholded ADK) | ❌ (RealGrid-only) |
+| Raman (SDO) | ✅ (CUDA Plan 21 explicit-on for scalar `RamanPolarField` beside Kerr, 1–64 flattened oscillators) | ❌ (RealGrid-only; no `RamanPolarEnv` wiring for free-space) |
 | Shot noise (`Et_noise`) | ❌ (explicitly rejected — `NativeIneligible`) | ❌ |
 | z-dependent normfun (two-point pressure gradient) | ⚠️ Kerr-only — combined with plasma or Raman ❌ | ❌ |
 
@@ -99,12 +99,50 @@ see the Modal table below).
   implement it. Plans 08 and 09 add explicit-`on` CUDA slices for radial
   RealGrid and EnvGrid scalar Kerr with resident QDHT/per-column FFT state;
   Plans 10–11 add one PPT or thresholded ADK plasma response to the radial
-  RealGrid slice with independent segmented scans per radial column. Radial
-  EnvGrid plasma,
-  radial Raman/noise, modal, free-space, and `:SiO2` outside mode-averaged
-  EnvGrid remain CPU-only. Radial CUDA `:auto` is deliberately
+  RealGrid slice with independent segmented scans per radial column. Plan 12
+  adds one explicit-on radial RealGrid SDO Raman response with one resident
+  series per radial column. Plan 13 adds one explicit-on radial EnvGrid SDO
+  `RamanPolarEnv` response with direct `0.5*abs2(E)` intensity and complex
+  `density*E*P` accumulation. Plan 14 adds an explicit-on modal RealGrid
+  scalar-Kerr point evaluator for constant-radius Marcatili/Zeisberger/Vincetti
+  collections, both cubature branches, and `npol=1|2`; host libcubature still
+  drives adaptive node placement, while the modal synthesis/FFT/Kerr/projection
+  pipeline remains resident. Plan 15 extends this surface to EnvGrid with
+  resident batched c2c transforms, complex envelope scratch, and the exact
+  low/high spectrum crop; this was hardware-verified on 2026-08-08 at
+  `4.82e-16`–`6.12e-16` fixed-node error and `5.97e-16` fixed-solve error.
+  Plan 16 adds an explicit-on modal RealGrid scalar SDO Raman slice with
+  per-node Raman/ADE/Hilbert scratch, both THG branches, and 1–64 flattened
+  oscillators; its focused hardware test passed 28/28 with ~1.3e-15 direct
+  stage error and `4.6e-16` fixed-solve error.
+  Plan 17 adds an explicit-on free-space RealGrid scalar-Kerr slice using one
+  resident joint 3-D cuFFT pair over the non-square-safe column-major
+  `(t,y,x)` volume, with explicit inverse volume normalization and the
+  transferred Julia free-space M array; its focused hardware test passed
+  28/28. Plan 18 extends this to EnvGrid with one full-spectrum resident Z2Z
+  3-D transform, explicit volume normalization, and the low/high temporal
+  crop; its strict focused test passed 28/28 with asymmetric complex stage
+  data and transactional setup checks. Plan 19 adds one explicit-on free-space
+  RealGrid PPT response with independent segmented scans over every `(y,x)`
+  series; its strict focused test passed 28/28 with `1.3e-15` stage,
+  `5.0e-16` fixed-solve, and `1.3e-14` adaptive errors. Plan 20 adds the
+  thresholded-ADK branch by reusing those series-local scans; its strict
+  focused test passed 43/43 with `1.2e-15` direct stage error,
+  `4.8e-16` fixed-solve error, and `2.7e-3` Julia ADK effect. Plan 21 adds
+  one explicit-on scalar `RamanPolarField` beside Kerr, with one independent
+  ADE/Hilbert series per flattened `(y,x)` point. Its strict focused test
+  passed 44/44 across N₂ vibration, rotation, rotation+vibration, and both
+  THG modes, with `1.28e-15`–`1.35e-15` direct stage error, `2.62e-16`/
+  `2.68e-16` fixed-solve error, and `1.18e-3` Julia Raman effect. Free-space
+  z-dependent norm/linop, EnvGrid plasma/Raman, unthresholded ADK, mixed
+  plasma+Raman, noise, and free-space `:auto` remain CPU-selected.
+  Modal `:auto` is deliberately disabled because the
+  recorded callback traffic is a correctness measurement, not a retained
+  production threshold. Radial EnvGrid plasma, intermediate-broadening radial
+  Raman, noise, tapered/modal non-Kerr physics, and `:SiO2` outside
+  mode-averaged EnvGrid remain CPU-only. Radial CUDA `:auto` is deliberately
   disabled.
-  See `GPU.md` and `BACKLOG.md` S3. **Status 2026-08-02:** the nonlinear RHS,
+  See `GPU.md` and `BACKLOG.md` S3. **Status 2026-08-08:** the nonlinear RHS,
   adaptive error/acceptance path, and parallel PPT prefix scans are
   hardware-verified. The supported Kerr, Kerr+PPT, and radial Kerr+ADK
   configurations agree

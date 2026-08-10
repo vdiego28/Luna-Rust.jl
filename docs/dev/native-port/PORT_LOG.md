@@ -3384,3 +3384,858 @@ exact CI-shaped command `python3 test/parallel_group_tests.py --group fields
 **Next:** Commit this follow-up on `luna-plans-07-11`. Do not push unless the
 lead explicitly requests it; after push, confirm both the branch and eventual
 main Actions runs use the preflight and finish green.
+
+## 2026-08-09 — S6 item 4 — ARM64 and CPU-only installation — Codex (GPT-5)
+**Status:** in-progress (implementation and local validation complete; first
+hosted Linux ARM64 run requires a commit/push).
+**Did:** Made package installation explicitly CPU-only by default, added a
+supported opt-in CUDA build policy and actionable CPU-only runtime diagnostic,
+corrected release-binary architecture selection, and added Linux ARM64 release
+and standing install/FFI CI jobs. Documented the user-facing installation and
+configuration paths in the README and a new generated-manual page covering
+Linux, macOS, Windows, ARM, source builds, CPU/CUDA selection, shell syntax,
+verification, updates, and troubleshooting.
+**How:** `amalthea/build.rs:9-252` implements
+`AMALTHEA_CUDA_BUILD=off|auto|required`, strict-test precedence, portable
+`NVCC`/`CUDA_HOME`/`CUDA_PATH` discovery, and policy tests;
+`amalthea/src/cuda.rs:37-57,418-428` identifies dummy PTX before driver loading
+and explains how to rebuild. `deps/build_platforms.jl:1-20` maps exact
+`(Sys.KERNEL, Sys.ARCH)` pairs and rejects CPU-only prebuilts for CUDA-required
+builds; `deps/build.jl:34,98-108,185-219` defaults package source builds to
+`off` and skips prebuilts when CUDA is requested. `.github/workflows/release.yml:28-53`
+adds `aarch64-unknown-linux-gnu` on the older `ubuntu-22.04-arm` glibc baseline;
+`.github/workflows/run_tests.yml:21-24,194-239` enforces CPU-only ordinary CI
+and adds native ARM package-build plus FFI smoke coverage. Installer policy is
+covered by `test/test_install_policy.jl:1-32` and registered in
+`test/rust_test_timings.txt`. `README.md:76-131` gives the concise installation
+path; `docs/src/installation.md:1-379` is the authoritative cross-platform
+guide and is registered in `docs/make.jl:9-12`; `docs/src/index.md:1-4` links
+new users to it, while `docs/dev/native-port/GPU.md:3-8` sends GPU developers
+to the same CUDA build prerequisite and troubleshooting instructions.
+**Decisions:** Make package/release builds CPU-only so CUDA is never an
+installation prerequisite; retain direct Cargo's `auto` default for developer
+convenience; force source compilation for `auto`, `required`, or strict CUDA
+tests because published binaries intentionally contain no kernels. Scope
+first-class binary support to 64-bit Linux ARM and Apple Silicon; unsupported
+OS/architecture pairs fall back to source instead of receiving a mismatched
+binary. Use GitHub's Ubuntu 22.04 ARM runner rather than 24.04 for broader glibc
+compatibility.
+**Gotchas:** Existing `AMALTHEA_REQUIRE_CUDA_TESTS=1` must override
+`AMALTHEA_CUDA_BUILD=off` in both Cargo policy and prebuilt selection. A local
+`cargo check --target aarch64-unknown-linux-gnu --tests` reaches Criterion's
+`alloca` build script and needs an `aarch64-linux-gnu-gcc` cross compiler; the
+library-only ARM check passes, while the new native ARM runner owns actual
+link/test validation. The first full Rust-group run found only a missing timing
+manifest row for the new test; it was added before the clean rerun.
+Amalthea is not yet registered in Julia General, and the current `v1.0.2`
+release predates both Linux ARM64 assets and `AMALTHEA_CUDA_BUILD`; user docs
+therefore pin the real stable tag only on its three supported binary platforms
+and direct ARM, other source-fallback platforms, and CUDA users to `main` until
+the first release containing this work.
+**Tests:** CPU-only `cargo test --release` passed 81/81 unit tests and 5/5
+build-policy tests. `deps/build.jl` succeeded with
+`NVCC=/definitely/not/a/real/nvcc` and no CUDA-mode setting, proving its default
+does not invoke CUDA. Focused installer + Phase 0 FFI passed 46/46; installer +
+manifest passed 372/372. Linux ARM64 `cargo check --target
+aarch64-unknown-linux-gnu --lib` passed; the broader `--tests` check stopped at
+the expected missing cross C compiler noted above. Host CUDA 13.3
+`AMALTHEA_CUDA_BUILD=required cargo build --release` passed, then the library
+was rebuilt CPU-only. The final CPU-only
+`LUNA_TEST_GROUP=rust julia --project test/runtests.jl` gate passed 42,749 with
+3 expected broken assertions (42,752 total) in 7m41.7s. Both workflows parsed
+as YAML; targeted `rustfmt --check` and `git diff --check` passed. The complete
+Documenter build (`julia --startup-file=no --project=docs docs/make.jl`) passed
+doctests, cross-reference checks, document checks, and HTML rendering; its only
+warnings were expected local deployment/remote-HEAD auto-detection warnings.
+GitHub's authoritative General-registry path returned 404, while the release
+API confirmed `v1.0.2` as latest with exactly Linux x86_64, macOS AArch64,
+Windows x86_64, and checksum-manifest assets; the install commands and
+temporary pre-release guidance reflect that state.
+**Next:** Commit and push when the lead requests it, then require the new
+`CPU-only install and FFI smoke (Linux ARM64)` hosted job to pass. If green,
+mark S6 item 4 complete; the next tag will publish the first Linux ARM64 asset.
+
+## 2026-08-03 — Plan 12 — CUDA radial RealGrid SDO Raman — Codex (GPT-5)
+**Status:** in-progress (implementation complete; hardware verification blocked
+by the host CUDA driver mismatch).
+**Did:** Added resident CUDA radial RealGrid Raman for one supported
+`RamanPolarField`, including both `thg=true` and `thg=false`, one independent
+ADE series per radial column, N₂ rotational flattening, and explicit-only
+dispatch. Added the focused CUDA test and expanded the support/design docs.
+**How:** `amalthea/src/cuda_native.rs:1839-1977` now runs the Raman intensity,
+batched Hilbert, ADE, and `pto += density*eto*P` stages between radial plasma
+and the time window. `set_raman_params` at `cuda_native.rs:3580-3650`
+allocates `n_time_over*n_r` resident buffers and creates a `cufftPlan1d`
+`CUFFT_Z2Z` plan with `batch=n_r`; mode-averaged calls keep batch one.
+`launch_raman_ade` at `cuda_native.rs:2971` passes the series count to the
+existing `raman_ade_kernel` FFI/PTX contract. `kernels.cu:94-121` applies the
+Hilbert parity mask to each column-local index. Julia's
+`src/RK45.jl:1060-1085` admits only scalar-density RealGrid radial SDO Raman
+(1–64 flattened oscillators), while `_gpu_native_eligible` keeps radial
+`:auto` false. No new exported symbol was needed; the existing
+`native_set_radial_params` and `native_set_raman_params` FFI symbols are used.
+**Decisions:** Keep the existing contiguous column-major layout and use cuFFT's
+native batch argument instead of per-column plans; this preserves residency and
+the Julia Hilbert convention. Add `n_series` to the filter kernel because a
+flat global parity index would corrupt every radial column after the first.
+Reject plasma+Raman and EnvGrid Raman in the CUDA eligibility predicate; those
+combinations are outside Plan 12 and remain correct CPU fallbacks. Keep the
+plan explicitly on-only because no radial Raman benchmark exists.
+**Gotchas:** The CUDA setter must run after `native_set_radial_params`, because
+`commit_radial_setup` clears `has_raman` and the radial geometry determines
+the allocation batch. The strict host check (sandboxed and elevated) returns
+`cuInit failed: 803` (userspace/kernel driver mismatch, reported as driver
+610.57 versus loaded kernel 610.43), so no direct-stage or trajectory number
+may be presented as hardware evidence. `cargo fmt --check` retains unrelated
+pre-existing bench/io formatting differences; the changed CUDA block was
+manually rustfmt-checked. The radial eligibility branch must remain mutually
+exclusive: Plan 10/11's Kerr+PPT/thresholded-ADK path is still accepted, while
+Plan 12 accepts Kerr+Raman with no plasma; an intermediate draft temporarily
+rejected the existing plasma slice and was corrected before the final focused
+dispatch checks.
+**Tests:** `cargo build --release` and strict
+`AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo build --release` passed (real PTX).
+Normal `cargo test` passed **80/80** unit tests, **3/3** build-policy tests.
+The existing CPU radial Raman item passed **8/8**, with direct-stage relative
+error `8.785036750483381e-9` and fixed-solve relative error
+`2.259849904756312e-7` (its ADE-vs-FFT oracle floor); its new `thg=false`
+vibration and 49-oscillator rotational checks measured `2.420486348289942e-9`
+and `6.963971854709647e-10`. The new no-hardware
+dispatch portion passed **10/10** eligibility/oscillator checks; strict focused
+CUDA construction failed at `cuInit failed: 803` as required rather than
+silently accepting a CPU backend. Strict `cargo test` reached **69/80** before
+the 11 expected CUDA-required failures from the same driver error. `git diff
+--check` passed.
+An attempted `LUNA_TEST_GROUP=rust julia --project test/runtests.jl` was
+environment-blocked before completion because this sandbox remounted
+`/home/diego/.julia/logs/scratch_usage.toml` read-only; the focused CPU and
+dispatch items above were rerun with their normal project cache. The timing
+manifest regression check passed **357/357** after adding the new item.
+**Next:** Rerun `AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo test` and
+`test/test_native_cuda_radial_raman.jl` on a host with matching CUDA kernel and
+userspace drivers; record direct-stage/fixed-solve tolerances, then mark Plan
+12 complete. Do not commit or push until the lead explicitly requests it.
+
+## 2026-08-03 — Plan 13 — CUDA radial EnvGrid SDO Raman — Codex (GPT-5)
+**Status:** in-progress (implementation complete; strict CUDA hardware
+verification blocked by the current host's missing CUDA device/driver).
+**Did:** Added the resident CUDA radial EnvGrid `RamanPolarEnv` slice on top of
+Plans 09 and 12. One scalar-density `CombinedRamanResponse` with 1–64 flattened
+SDO oscillators now runs one ADE series per radial column; CPU radial EnvGrid
+Raman was already present and remains the oracle.
+**How:** `amalthea/src/cuda_native.rs:2047-2250` now forms flattened
+`0.5*abs2(E)` with `raman_intensity_env_kernel`, launches
+`raman_ade_kernel` with `n_series=n_r`, and accumulates complex
+`density*E*P` through `raman_accumulate_env_kernel` before the existing radial
+time window/QDHT/forward-c2c tail. The existing `set_raman_params` allocation
+and `launch_raman_ade` series-count contract are reused; no new exported FFI
+symbol was needed. `src/RK45.jl:1060-1098` admits only grid-matching
+`RamanPolarEnv` SDO responses for radial EnvGrid and keeps `:auto` false.
+The focused item is `test/test_native_cuda_radial_env_raman.jl`; its complex
+two-column sentinel, direct stages, fixed solve, non-vacuity, and rejected-step
+checks run after the strict CUDA construction gate.
+**Decisions:** Reuse the existing complex radial buffers and EnvGrid kernels
+instead of adding a second Raman implementation. EnvGrid has no Hilbert or
+carrier-THG branch: `RamanPolarEnv` is exactly `0.5*|E|²` followed by complex
+`E*(rho*P)`. Keep plasma+Raman, intermediate-broadening Raman, mixtures,
+noise, z-dependent configurations, and radial `:auto` outside the gate.
+**Gotchas:** `native_set_radial_params` clears `has_raman`, so the setter must
+run afterward; this is also why the focused direct-isolation test explicitly
+reapplies Raman after replacing radial geometry. The ADE buffer layout is
+column-major `(n_time_over,n_r)` and the kernel launch grid is one thread per
+column, not one thread per flattened time cell. The current sandbox's strict
+CUDA construction returns `cuInit failed: 100`; no GPU tolerance is reported.
+**Tests:** `cargo build --release` and strict
+`AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo build --release` passed; normal `cargo
+test` passed **80/80** unit tests plus **3/3** build-policy tests. The focused
+CPU radial EnvGrid Raman + new no-hardware CUDA item passed **15** checks with
+one expected CUDA skip; CPU oracle errors were `1.3087284812554257e-8`
+(single-stage), `5.701879671665477e-7` (fixed solve), and Raman on/off effect
+`6.05361860812262e-4`. The new strict CUDA item reached **10/10** eligibility
+checks and then failed at the required `cuInit failed: 100` construction gate;
+the existing Plan 12 dispatch item remained **10/10** before its expected
+CUDA skip. The timing/discovery manifest passed **360/360**, and
+`git diff --check` passed. The complete
+`JULIA_DEPOT_PATH=/tmp/luna-rust-depot:/home/diego/.julia LUNA_TEST_GROUP=rust`
+gate passed **42,761** tests with **5** expected hardware-gated broken items
+(42,766 total); no non-CUDA regression was reported.
+**Next:** Rerun strict CUDA build/tests on a host with a matching device and
+userspace/kernel driver, record direct-stage/fixed-solve/rejection tolerances,
+then mark Plan 13 complete. Do not commit or push until the lead explicitly
+requests it.
+
+## 2026-08-04 — Plan 13 — verification continuation — Codex (GPT-5)
+**Status:** in-progress (implementation and CPU verification complete; strict
+CUDA hardware verification remains blocked by this host).
+**Did:** Audited the existing Plan 13 implementation and ran the focused,
+Rust-group, and Rust crate gates without changing the CUDA design. The radial
+EnvGrid `RamanPolarEnv` path remains resident and explicit-on only; the Julia
+oracle confirms that Raman is present and materially changes the trajectory.
+**How:** Rechecked `amalthea/src/cuda_native.rs:2046-2241` for the resident
+`raman_intensity_env_kernel` → `raman_ade_kernel` →
+`raman_accumulate_env_kernel` sequence, with `n_series=n_r`, and
+`amalthea/src/cuda_native.rs:3639-3734` for column-batched Raman allocation.
+The existing `native_set_radial_params` and `native_set_raman_params` FFI
+symbols are sufficient; kernel loading remains in `amalthea/src/cuda.rs:480-488`.
+Julia dispatch is guarded by `src/RK45.jl:1056-1098` and keeps radial `:auto`
+disabled at `src/RK45.jl:1287-1299`.
+**Decisions:** Preserve direct `0.5*abs2(E)` EnvGrid intensity, complex
+`density*E*P` accumulation, one independent ADE series per radial column, and
+the explicit `AMALTHEA_NATIVE_GPU=on` policy. Do not broaden the slice to
+plasma, intermediate-broadening Raman, mixtures, noise, or automatic dispatch
+without a separate design and benchmark.
+**Gotchas:** `native_set_radial_params` clears Raman state, so Raman setup must
+remain after radial setup. The local host has no usable CUDA device: the strict
+construction gate returns `cuInit failed: 100`; no GPU stage or trajectory
+tolerance is claimed. `nvcc` is also absent, so the release build uses the
+CPU-only/dummy-PTX policy path and cannot provide hardware evidence.
+**Tests:** `cargo build --release` passed; `cargo test` passed **80/80** unit
+tests, **3/3** build-policy tests, and doc tests. The focused radial Raman set
+(`test_native_radial_raman.jl`, `test_native_radial_env_raman.jl`, and both
+CUDA items) passed **33** checks with **2** expected CUDA-gated broken items.
+The new CPU EnvGrid oracle measured single-step relative error
+`1.3087284811991078e-8`, fixed-solve relative error
+`5.701879671732303e-7`, and Raman on/off effect
+`6.053618608122603e-4`; the CPU rotation and vibration controls also passed.
+The complete `JULIA_DEPOT_PATH=/tmp/luna-rust-depot:/home/diego/.julia
+LUNA_TEST_GROUP=rust julia --project test/runtests.jl` gate passed **42,761**
+tests with **5** expected CUDA-gated broken items (**42,766** total).
+`rustfmt --edition 2024 --check` on the touched Rust files and `git diff
+--check` passed.
+**Next:** Rerun strict CUDA build/tests and
+`test_native_cuda_radial_env_raman.jl` on a host with a matching device and
+userspace/kernel driver; record direct-stage, fixed-solve, and rejection/retry
+tolerances, then mark Plan 13 complete. Do not commit or push until the lead
+explicitly requests it.
+
+## 2026-08-04 — Plan 13 — CUDA toolkit path correction — Codex (GPT-5)
+**Status:** in-progress (real PTX build confirmed; runtime CUDA verification
+blocked by the NVIDIA driver/device, not by `nvcc`).
+**Did:** Located the installed CUDA 13.3 compiler at
+`/usr/local/cuda-13.3/bin/nvcc` and rebuilt strict mode with that explicit
+toolkit path. The generated release PTX is real and contains the Plan 13
+`raman_intensity_env_kernel` and `raman_accumulate_env_kernel` entries.
+**How:** `build.rs:37-52` already prefers `/usr/local/cuda-13.3/bin/nvcc`,
+so no build-script change was needed. `PATH=/usr/local/cuda-13.3/bin:$PATH
+AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo build --release` succeeded; the selected
+PTX reports `.version 9.3`, `.target sm_75`, and `.address_size 64`.
+**Decisions:** Correct the earlier handoff: `nvcc` is installed and working;
+the remaining blocker is runtime driver/device availability. Keep Plan 13
+hardware status pending until the CUDA kernels actually execute.
+**Gotchas:** `nvidia-smi` currently reports that it cannot communicate with
+the NVIDIA driver, and strict CUDA initialization returns `cuInit failed: 100`.
+The real-PTX build therefore does not imply usable CUDA runtime hardware.
+**Tests:** Strict `AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo test` compiled real PTX,
+then passed **69** non-CUDA tests and failed **11** required CUDA runtime tests,
+all at the expected `cuInit failed: 100`/strict-dispatch gate. No Plan 13 GPU
+stage or trajectory tolerance is claimed from this run.
+**Next:** Restore or expose a matching NVIDIA driver/device, rerun strict
+`cargo test` and `test_native_cuda_radial_env_raman.jl`, then record direct
+stage/fixed-solve/rejection tolerances and mark Plan 13 complete. Do not commit
+or push until the lead explicitly requests it.
+
+## 2026-08-04 — Plans 12-13 — post-QDHT radial Raman correction and hardware verification — Codex (GPT-5)
+**Status:** complete
+**Did:** Corrected both radial CUDA Raman paths to consume the post-QDHT field
+`radial_qdht_d`, matching the Julia oracle. Plan 12 RealGrid now uses it for
+Raman intensity, Hilbert packing, and accumulation; Plan 13 EnvGrid uses it
+for intensity and accumulation. Verified both implementations on the host
+RTX 5060 Ti through the real CUDA 13.3 toolkit and driver outside the
+sandbox.
+**How:** Updated the radial RealGrid launch arguments at
+`amalthea/src/cuda_native.rs:1852-1960` and the radial EnvGrid launch
+arguments at `amalthea/src/cuda_native.rs:2200-2234`. The resident sequence
+remains `raman_intensity_*_kernel` → `raman_ade_kernel` →
+`raman_accumulate_*_kernel` (`amalthea/src/kernels.cu:19-205`), with the
+existing `native_set_radial_params` and `native_set_raman_params` FFI symbols
+(`amalthea/src/native.rs:5956-6060`). Built the release library with
+`PATH=/usr/local/cuda-13.3/bin:$PATH cargo build --release` using the host
+CUDA toolkit.
+**Decisions:** Use the QDHT output as the sole radial Raman input because the
+Julia radial Raman implementation operates after QDHT; feeding pre-QDHT
+`radial_eto_d` caused the original hardware mismatch. Keep the established
+explicit-on GPU policy and resident ADE buffers unchanged. CUDA compilation,
+driver checks, and CUDA Julia tests were run with escalated execution as
+required by the sandbox boundary.
+**Gotchas:** A real `nvcc`/PTX build is not sufficient evidence by itself;
+runtime tests must execute outside the sandbox with the host driver/device.
+`native_set_radial_params` still clears Raman state, so radial setup must
+precede `native_set_raman_params`.
+**Tests:** The focused strict Plan 12 CUDA radial RealGrid Raman test passed
+30/30: direct-stage relative errors were `1.2176393336709174e-15`,
+`1.2250479395184967e-15`, `1.2129323210840749e-15`, and
+`1.2247180275926516e-15`; fixed-solve errors were
+`2.4247807056872316e-16` and `2.6033640038035684e-16`. The focused strict
+Plan 13 CUDA radial EnvGrid Raman test passed 26/26: vibration and rotation
+stage errors were `1.3663812132320697e-15` and
+`1.3675877622579538e-15`, with fixed-solve error
+`4.274807898520184e-16`; the Julia Raman on/off effect was
+`8.586212320073898e-5`. The complete strict
+`AMALTHEA_REQUIRE_CUDA_TESTS=1 LUNA_TEST_GROUP=rust julia --project
+test/runtests.jl` gate passed **43,149/43,149** tests in **13m28.1s**.
+Strict `cargo test` passed **80/80** unit tests, **3/3** build-policy tests,
+and doc tests; `git diff --check` passed.
+**Next:** Leave the working tree uncommitted for the lead review. No further
+Plan 12/13 implementation is required unless the lead requests broader
+automatic radial dispatch or additional Raman physics.
+
+## 2026-08-04 — Plan 14 — CUDA modal RealGrid Kerr — Codex (GPT-5)
+**Status:** complete
+**Did:** Implemented the explicit CUDA backend for the bounded modal
+`TransModal` RealGrid Kerr surface: constant-radius Marcatili/Zeisberger/
+Vincetti mode collections, `full=false|true`, and `npol=1|2`. Added the CUDA
+modal test and updated the plan/support/backlog documentation.
+**How:** Added resident synthesis, Kerr, window, and projection kernels at
+`amalthea/src/kernels.cu:511-656`; loaded them in `amalthea/src/cuda.rs`; and
+added transactional staging/commit at `amalthea/src/cuda_native.rs:975-1225`.
+The resident cubature callback path is `compute_rhs_modal` at
+`amalthea/src/cuda_native.rs:3721`, with Julia-oracle diagnostics exposed by
+`native_debug_modal_eval_nodes`/`native_debug_modal_stats` at
+`amalthea/src/native.rs:5637-5665`. Dispatch eligibility is guarded at
+`src/RK45.jl:1057-1090` and `:auto` remains disabled at
+`src/RK45.jl:1320`. The regression suite is
+`test/test_native_cuda_modal.jl:3`.
+**Decisions:** Keep libcubature as the adaptive host driver while moving the
+point pipeline and FFT/Kerr/projection work to device-resident buffers. Use a
+transactional setup so rejected metadata or allocations leave the prior
+backend intact; batch modal point evaluations in groups of 32; and require
+explicit `AMALTHEA_USE_RUST_CUDA_NATIVE=1` because automatic modal dispatch
+and broader tapered/EnvGrid/mixture/Raman surfaces are separate plans.
+**Gotchas:** The host callback still crosses into the resident CUDA pipeline,
+so host node traffic is expected; the stats diagnostic proves device batching
+and reports `1204` batches, `81872` H→D bytes, and `167837600` D→H bytes in the
+fixed solve. The first complete strict group run found only the new test's
+missing timing entry; adding `test_native_cuda_modal.jl 5.0` to
+`test/rust_test_timings.txt` fixed the manifest. All CUDA builds, `nvcc`
+checks, and CUDA tests were run outside the sandbox with the host CUDA 13.3
+toolkit as required by `AGENTS.md`.
+**Tests:** `PATH=/usr/local/cuda-13.3/bin:$PATH cargo build --release`
+passed; strict `cargo test` passed **80/80** unit tests, **3/3** build-policy
+tests, and doc tests. The focused strict Plan 14 suite passed **37/37**;
+fixed-node errors ranged from `1.1079902887668028e-15` to
+`1.4053092902138258e-15`, direct-stage errors from
+`1.1304535430514785e-15` to `1.202675233314274e-15`, and the full solve was
+`4.0716193972385144e-16`. HE11→HE12 transfer was
+`8.49295545067159e-6`, and the Julia Kerr on/off non-vacuity effect was
+`0.02530853823580894`. The corrected complete strict
+`AMALTHEA_REQUIRE_CUDA_TESTS=1 LUNA_TEST_GROUP=rust julia --project
+test/runtests.jl` gate passed **43,189/43,189** tests in **12m18.2s**;
+`test_test_manifest.jl` passed **363/363**. `rustfmt --edition 2024 --check`
+on the touched Rust sources and `git diff --check` passed.
+**Next:** Plan 15 — CUDA modal EnvGrid Kerr. Leave the working tree
+uncommitted for lead review; do not commit or push without explicit request.
+
+## 2026-08-08 — Plan 15 — CUDA modal EnvGrid Kerr — Codex (GPT-5)
+**Status:** complete
+**Did:** Extended the resident modal CUDA point evaluator from Plan 14's
+RealGrid-only r2c/c2r pipeline to EnvGrid's full complex envelope path. The
+new path performs modal synthesis, batched Z2Z inverse/forward transforms,
+complex `Kerr_env` scalar/vector response, windowing, low/high spectrum crop,
+and modal projection without transferring the field or scratch to the host.
+**How:** `amalthea/src/kernels.cu` adds
+`modal_kerr_env_kernel`, `modal_apply_window_complex_kernel`, and
+`modal_project_env_kernel`; `amalthea/src/cuda.rs` loads their
+`CUfunction`s. `amalthea/src/cuda_native.rs:970-1193` stages the EnvGrid
+complex buffers and transactional c2c plans, and
+`amalthea/src/cuda_native.rs:3602-3725` dispatches the EnvGrid callback path.
+The existing FFI seam is reused: `native_set_fftw_plans` selects the grid
+representation, `native_set_modal_params` stages the setup, and
+`native_debug_modal_eval_nodes`/`native_debug_modal_stats` provide the test
+diagnostics; no new ABI symbols were added. Julia eligibility is guarded at
+`src/RK45.jl:1056-1087`, with modal `:auto` still disabled at
+`src/RK45.jl:1318-1323`.
+**Decisions:** Preserve Plan 14's host libcubature driver and batch capacity
+of 32 so this is a narrow correctness extension. Use c2c for both EnvGrid
+transforms because the negative-frequency envelope half is physical; use
+complex scratch so asymmetric complex and vector-polarization data are not
+silently discarded. Implement the exact `0.75*kerr_fac` scalar/vector
+`Kerr_env` formulas and CPU low/high expansion/crop scaling. Keep setup
+transactional and require explicit CUDA-on dispatch because modal callback
+traffic has no production-shaped `:auto` threshold.
+**Gotchas:** The `ModalSetup` fields retain the historical `fft_r2c` and
+`fft_c2r` names, but EnvGrid stores Z2Z handles in those slots. EnvGrid modal
+metadata must be installed after `native_set_fftw_plans` so `is_real` and the
+full-spectrum lengths are known. The projection crop must retain both low and
+high spectral halves; using the RealGrid half-spectrum formula is a silent
+normalization/physics error. Raman, plasma, noise, mixtures, tapered radius,
+and free-space remain CPU fallback. The focused test's device stats showed
+resident batched evaluation; only node coordinates and packed callback values
+cross the boundary.
+**Tests:** With CUDA 13.3 on the RTX 5060 Ti (driver 610.43.02),
+`PATH=/usr/local/cuda-13.3/bin:$PATH cargo build --release` and strict
+`AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo test` passed (80/80 unit, 3/3 policy,
+and docs). The focused command
+`PATH=/usr/local/cuda-13.3/bin:$PATH AMALTHEA_REQUIRE_CUDA_TESTS=1
+JULIA_DEPOT_PATH=/tmp/luna-rust-depot:/home/diego/.julia julia --project -e
+'using TestItemRunner; @run_package_tests filter=ti->basename(String(ti.filename))
+== "test_native_cuda_modal_env.jl"'` passed 35/35. The focused Plan 14+15
+command used the same environment with the filename set
+`{"test_native_cuda_modal.jl", "test_native_cuda_modal_env.jl"}` and passed
+72/72. The CPU controls command selected `test_native_modal_env.jl`,
+`test_native_cuda_modal.jl`, and `test_native_cuda_modal_env.jl` without strict
+CUDA and passed the CPU modal EnvGrid cases; the CUDA portions were expected
+to stop at `cuInit failed: 100` in the sandbox. The Plan 15 item had point errors
+`4.82e-16`–`6.12e-16`, stage errors `3.07e-16`–`3.27e-16`, fixed solve
+`5.97e-16`, HE11→HE12 transfer `8.41e-6`, Julia Kerr-on/off effect
+`0.025187`, and adaptive solve `7.02e-17`; the hot rejected trial preserved
+state. CPU modal EnvGrid controls passed at `1.07e-17`–`1.12e-17`. The required strict
+`PATH=/usr/local/cuda-13.3/bin:$PATH AMALTHEA_REQUIRE_CUDA_TESTS=1
+LUNA_TEST_GROUP=rust julia --project test/runtests.jl` gate passed
+43,227/43,227 in 12m40.1s. The manifest item
+`test_test_manifest.jl` passed 366/366. `rustfmt --edition 2024 --check` on
+touched Rust sources and `git diff --check` also passed.
+**Next:** Plan 15 is complete; leave the working tree uncommitted for lead
+review. The live queue is standing required-CUDA CI, which remains deferred
+by the lead.
+
+## 2026-08-08 — Plan 16 — CUDA modal RealGrid scalar SDO Raman — Codex (GPT-5)
+**Status:** complete
+**Did:** Added the explicit CUDA modal RealGrid `npol=1` SDO Raman path for
+Kerr plus one supported `RamanPolarField`, including vibrational and
+rotational oscillator sets and both THG branches. Added the focused strict
+CUDA regression and updated the feature plan, backlog, GPU/support matrix,
+and timing manifest.
+**How:** `CudaNativeSim` now owns modal Raman intensity, ADE polarization, and
+two Hilbert scratch buffers plus a fixed batched Z2Z plan at
+`amalthea/src/cuda_native.rs:287-294,4740-4888`. The existing
+`native_set_raman_params` FFI symbol is reused after
+`native_set_modal_params`; when `is_modal` is committed it stages one series
+per modal callback capacity slot (`batch_capacity=32`) and keeps the resident
+coefficient buffer. `launch_raman_ade_buffers` at
+`amalthea/src/cuda_native.rs:3511-3560` shares the existing
+`raman_ade_kernel` (`amalthea/src/kernels.cu:19-57`) without aliasing general
+mode-averaged/radial scratch. The RealGrid callback pipeline at
+`amalthea/src/cuda_native.rs:3818-3949` performs inverse D2Z/normalization,
+Kerr, direct `E²` or batched Hilbert analytic intensity, per-node ADE reset,
+Raman accumulation, then the existing window/forward/projection sequence.
+Julia dispatch at `src/RK45.jl:1058-1103` admits only scalar RealGrid
+`npol=1` plus one flattenable SDO Raman response and retains modal `:auto`
+false; EnvGrid Raman, `npol=2`, mixtures, plasma/noise, and unsupported Raman
+forms remain rejected.
+**Decisions:** Keep the FFI ABI unchanged and branch inside the already-used
+Raman setter because modal setup is committed before Raman wiring. Allocate
+all modal series up front so adaptive libcubature batches cannot race on one
+ADE state; the Hilbert plan intentionally uses the same fixed capacity and
+only the first `count` series are consumed. Keep the explicit-on policy until
+a production-shaped modal callback benchmark establishes an `:auto` threshold.
+The focused trajectory/non-vacuity controls use the one-oscillator
+vibrational case; the 49-oscillator rotational case remains in direct/stage
+coverage because a 4096-sample full CPU adaptive oracle is prohibitively slow.
+**Gotchas:** The setter is called after `native_set_modal_params`, which is
+required for `is_modal` and `modal_batch_capacity` to be valid. General Raman
+buffers remain separate from modal buffers, while the oscillator coefficients
+are shared. The checked-in worktree already contains the uncommitted Plan
+12-15 changes; no unrelated changes were reset or committed.
+**Tests:** `PATH=/usr/local/cuda-13.3/bin:$PATH cargo build --release` passed;
+strict `AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo test --release` passed **80/80**
+unit tests, **3/3** build-policy tests, and doc tests. The strict focused
+`test/test_native_cuda_modal_raman.jl` item passed **28/28**: vibrational
+point/stage errors were `1.2429492854323458e-15`/`1.2098953172420851e-15`,
+49-oscillator rotational point/stage errors were
+`1.2941687524129939e-15`/`1.2542534948849856e-15`, vibrational fixed-solve
+error was `4.590545863533624e-16`, adaptive error was
+`1.298432672431427e-16`, and Julia Raman-on/off effect was
+`7.113114480796866e-4`; rejected-state preservation/retry also passed. CPU
+modal Raman/threading and related Raman controls passed **25/25**. The strict
+mode-averaged CUDA Raman regression passed **157/157**. The complete strict
+`AMALTHEA_REQUIRE_CUDA_TESTS=1 LUNA_TEST_GROUP=rust julia --project
+test/runtests.jl` gate passed **43,258/43,258** in **13m06.0s**.
+`git diff --check` passed.
+**Next:** Leave the working tree uncommitted for lead review. The live queue
+is standing required-CUDA CI, which remains deferred by the lead.
+
+## 2026-08-08 — Plan 20 — CUDA free-space RealGrid thresholded ADK — Codex (GPT-5)
+**Status:** complete
+**Did:** Added the explicit CUDA `TransFree + RealGrid` scalar-Kerr plus
+thresholded-ADK plasma path. It reuses Plan 19's independent segmented scans
+for every `(y,x)` series, including the exact ADK threshold and non-finite
+field semantics, and keeps the plasma polarization before the free-space time
+window and joint forward transform. Nothing was committed or pushed.
+**How:** `amalthea/src/cuda_native.rs:2307-2465` now launches either the PPT or
+ADK rate and shares the series-local fraction/current/polarization scan;
+`set_plasma_params_adk` at `:5466-5590` permits free-space RealGrid only and
+stages `n_y*n_x` scratch transactionally. The ADK rate receives the seven
+transferred constants from `ionization::AdkIonizationRate`, while
+`src/RK45.jl:1054-1059` admits only `IonRateADK(threshold=true)` for this
+explicit free-space shape. `test/test_native_cuda_free_adk.jl` covers rate
+boundaries, NaN handling, independent spatial series, direct asymmetric stage
+data, setup rollback, fixed/adaptive/rejected trajectories, and non-vacuous
+plasma effect.
+**Decisions:** Reuse Plan 19's scan and finalizers rather than introduce a
+second ADK-specific integration path; preserve `s=iy+n_y*ix` and
+`j=s*n_time_over+i` boundaries; keep `:auto`, unthresholded ADK, EnvGrid
+plasma, z-dependent combinations, Raman/noise, and mixtures CPU-selected.
+Invalid ADK replacement remains transactional, and the free-space setter is
+called before the ADK setter.
+**Gotchas:** The joint real 3-D transform represents one active physical
+series in two Hermitian support slots, so the boundary test checks reconstructed
+support rather than assuming one raw memory slot. The first full Rust-group run
+was started before its new timing-manifest entry existed and reached **43,397
+passed, 1 failed** only at `test_test_manifest.jl`; the corrected rerun passed
+**43,398/43,398**. Existing uncommitted Plan 12-19 work was preserved.
+**Tests:** `PATH=/usr/local/cuda-13.3/bin:$PATH cargo build --release` passed;
+strict `PATH=/usr/local/cuda-13.3/bin:$PATH AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo
+test --release` passed **80/80** Rust unit tests, **3/3** build-policy tests,
+and docs. The focused strict Plan 20 CUDA test passed **43/43** with direct
+stage errors `1.219997607646526e-15` and `1.290476856284764e-15`, Julia ADK
+effect `0.0026768995301431862`, strong native-vs-Julia error
+`6.704619060731584e-16`, fixed-solve error `4.771968773563592e-16`, and
+adaptive-solve error `1.348203925172025e-16`. CPU free-space controls passed
+**15/15**. The strict `AMALTHEA_REQUIRE_CUDA_TESTS=1 LUNA_TEST_GROUP=rust
+julia --project test/runtests.jl` rerun passed **43,398/43,398** in **14m28.2s**;
+`git diff --check` passed. The implementation documentation and timing
+manifest are updated; nothing was committed or pushed.
+**Next:** Plan 21 is the next explicitly requested feature record. The
+authoritative backlog's separate live operational queue remains standing
+required-CUDA CI.
+
+## 2026-08-08 — Plan 18 — CUDA free-space EnvGrid scalar Kerr — Codex (GPT-5)
+**Status:** complete
+**Did:** Added the explicit CUDA `TransFree + EnvGrid` scalar-Kerr path with
+joint complex 3-D transforms, transactional setup/reconfiguration, non-square
+and asymmetric-complex stage coverage, fixed/adaptive solve parity, and
+rejected-step state preservation. Broadened GPU eligibility only for the
+constant-linop/constant-norm scalar EnvGrid slice; plasma, Raman, noise,
+z-dependent normalization, mixtures, and `:auto` remain out of scope.
+**How:** `amalthea/src/cuda_native.rs:129-151,1082-1200` extends `FreeSetup`
+with staged complex buffers and a Z2Z plan; `commit_free_setup` at
+`amalthea/src/cuda_native.rs:1607-1655` swaps/destroys the c2c setup
+transactionally. `compute_rhs_free_env` at
+`amalthea/src/cuda_native.rs:3291-3470` uses the existing
+`expand_radial_spectrum_env_fn`, one joint `cufftExecZ2Z` inverse, explicit
+`1/(n_time_over*n_y*n_x)` scaling, `rhs_mode_avg_env_fn` for envelope Kerr,
+the complex time window, and `finalize_radial_spectrum_env_fn` for crop,
+scale, and Julia's transferred normalization. `src/RK45.jl:1063-1100,1358-1385`
+admits EnvGrid alongside the Plan 17 RealGrid slice. The FFI entry point
+`native_set_free_params` at `amalthea/src/native.rs:6334-6370` now reaches
+the staged c2c configuration through the existing free-space lifecycle.
+**Decisions:** Preserve the Julia low/high spectral-half convention and
+column-major `(n_time,n_y,n_x)` layout; use cuFFT dimensions
+`(n_x,n_y,n_time_over)`; use `n_spec=n_time`, `n_spec_over=n_time_over`, and
+the `n_spec_over/n_spec` plus reverse crop scale; reuse the generic EnvGrid
+radial kernels rather than adding duplicate CUDA kernels; and keep the path
+explicit-on until a production-shaped `:auto` policy exists. The invalid
+`native_set_free_params` setup is staged before the live configuration is
+replaced, so failure leaves the prior working state usable.
+**Gotchas:** `native_set_free_params` is called after
+`native_set_fftw_plans`; the EnvGrid buffer element type is complex for both
+time and spectrum storage, and the c2c plan must be destroyed and swapped
+with the rest of `FreeSetup`. The Plan 17 RealGrid test's eligibility
+expectation was updated for the intentional Plan 18 broadening. CUDA focused
+commands require the host GPU environment; the passing focused and full
+strict runs were executed with CUDA 13.3 outside the sandbox. Existing
+uncommitted Plan 12-17 changes were preserved; nothing was committed or
+pushed.
+**Tests:** `rustfmt --edition 2024 --check amalthea/src/cuda.rs
+amalthea/src/cuda_native.rs` and `git diff --check` passed. With CUDA 13.3,
+`PATH=/usr/local/cuda-13.3/bin:$PATH cargo build --release` passed; strict
+`PATH=/usr/local/cuda-13.3/bin:$PATH AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo test
+--release` passed **80/80** Rust unit tests, **3/3** build-policy tests, and
+docs. The strict focused Plan 17 + Plan 18 bucket passed **57/57**; Plan 18
+stage relative error was `4.354880143223086e-16`, fixed-solve error was
+`6.891284568725158e-16`, adaptive error was `8.797333078266302e-17`, and
+the Julia Kerr on/off effect was `2.146390747761833e-4`. CPU free-space
+controls passed **10/10**. The complete strict
+`AMALTHEA_REQUIRE_CUDA_TESTS=1 LUNA_TEST_GROUP=rust julia --project
+test/runtests.jl` gate passed **43,321/43,321** in **13m03.4s**.
+**Next:** Leave the working tree uncommitted for lead review. The live queue
+is standing required-CUDA CI, which remains deferred by the lead.
+
+## 2026-08-08 — Plan 17 — CUDA free-space RealGrid scalar Kerr — Codex (GPT-5)
+**Status:** complete
+**Did:** Added the explicit CUDA free-space `TransFree + RealGrid` scalar Kerr
+path, including non-square transverse geometry, joint 3-D cuFFT execution,
+transactional setup/reconfiguration, fixed and adaptive solve coverage, and
+Julia-oracle parity. The path is explicit-on only; `:auto` remains disabled.
+**How:** `amalthea/src/cuda.rs` now loads `cufftPlan3d`. In
+`amalthea/src/cuda_native.rs`, `FreeSetup` stages device buffers and separate
+3-D D2Z/Z2D plans, `stage_free_setup` validates and allocates without touching
+the live state, `commit_free_setup` swaps the setup transactionally, and
+`compute_rhs_free` reuses the generic radial expansion/finalization kernels
+around the resident inverse transform, flat Kerr, time window, and forward
+transform. The cuFFT dimensions are `(n_x, n_y, n_time_over)` to preserve
+Julia's column-major `(n_time, n_y, n_x)` layout; the inverse explicitly uses
+`1/(n_time_over*n_y*n_x)`. `src/RK45.jl` admits only constant-linop,
+constant-norm scalar Kerr on `RealGrid` and rejects EnvGrid, z-dependent norm,
+noise, and other free-space variants. `test/test_native_cuda_free.jl` covers
+stage and nonsymmetric-spectrum parity, fixed/adaptive trajectories, setup
+failure rollback, and retry/rejection state.
+**Decisions:** Reuse the existing radial expand/crop kernels because their
+series dimension is arbitrary and matches the free-space column count. Keep
+the Julia-provided `M`, `towin`, and normalization arrays as the authoritative
+conventions. Use distinct 3-D plans rather than a per-column loop so the GPU
+matches the CPU joint transform and volume normalization. Keep free-space
+CUDA explicit-only until a production-shaped `:auto` policy exists.
+**Gotchas:** `native_set_free_params` is called after
+`native_set_fftw_plans`, so the RealGrid spectral dimensions are available.
+The second free-space setup is deliberately staged before the old plans and
+buffers are released; invalid dimensions therefore leave the prior working
+configuration usable. The existing uncommitted Plan 12-16 changes and their
+tests were preserved; nothing was committed or pushed.
+**Tests:** With CUDA 13.3, `PATH=/usr/local/cuda-13.3/bin:$PATH cargo
+build --release` passed. Strict `PATH=/usr/local/cuda-13.3/bin:$PATH
+AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo test --release` passed **80/80** Rust
+unit tests, **3/3** build-policy tests, and docs. The strict focused Plan 17
+bucket passed **28/28**; direct and nonsymmetric stage checks were within
+`1e-12`, fixed-solve relative error was `2.6171884451890455e-16`, adaptive
+trajectory relative error was `1.0256798614425749e-16`, and the Julia Kerr
+on/off non-vacuity effect was `1.073192043990405e-6`. CPU free-space controls
+passed **14/14**. The complete strict
+`AMALTHEA_REQUIRE_CUDA_TESTS=1 LUNA_TEST_GROUP=rust julia --project
+test/runtests.jl` gate passed **43,289/43,289** in **13m10.5s**. The timing
+manifest, feature plan, README, backlog, GPU guide, and support matrix were
+updated; `git diff --check` passed.
+**Next:** Leave the working tree uncommitted for lead review. The live queue
+is standing required-CUDA CI, which remains deferred by the lead.
+
+## 2026-08-08 — Plan 19 — CUDA free-space RealGrid PPT plasma — Codex (GPT-5)
+**Status:** complete
+**Did:** Added the explicit CUDA `TransFree + RealGrid` scalar-Kerr plus PPT
+plasma path. The implementation performs an independent segmented cumulative
+scan for every `(y,x)` column, stages plasma polarization before the free-space
+time window, and preserves transactional setup/reconfiguration behavior.
+**How:** `amalthea/src/cuda_native.rs:2251-2289` generalizes the scan launcher
+to `plasma_scan_series`; `:2307-2465` implements the PPT fraction/current/
+polarization pipeline for flattened independent series; and
+`:3301-3420` inserts it after free-space Kerr and before the window and joint
+3-D transform. `amalthea/src/kernels.cu:1182-1289` provides the series/block
+scan and finalizers, while `amalthea/src/cuda.rs:356-357,709-713` loads the
+new symbols. `set_plasma_params` at
+`amalthea/src/cuda_native.rs:5316-5434` sizes scratch as `n_time_over*n_y*n_x`
+and stages all allocations before replacing the live setup. The Julia
+eligibility contract is at `src/RK45.jl:1056-1089`; the FFI entry points remain
+`native_set_plasma_params` (`amalthea/src/native.rs:5964`) and
+`native_set_free_params` (`amalthea/src/native.rs:6335`).
+**Decisions:** Flatten each series as `s=iy+n_y*ix` with contiguous time
+samples `j=s*n_time_over+i`; store raw scan totals at `[s*n_blocks+b]` and
+sum only preceding blocks from the same series in each finalizer. Reused the
+existing PPT spline/rate and exact CPU-equivalent three-trapezoid formulas;
+plasma is accumulated into `Pto` before the free-space window. Kept free-space
+ADK, EnvGrid plasma, Raman/noise, z-dependent normalization, mixtures, and
+`:auto` out of scope. Setup failure leaves the previous valid configuration
+usable.
+**Gotchas:** The free-space geometry setter must run before
+`native_set_plasma_params`; the free plasma count is `n_y*n_x`, not one global
+series. Raw block totals are not globally prefix-scanned, so every series
+finalizer must apply its own preceding-block offset. The Rust scan regression
+uses two full blocks, a partial block, multiple series, and a zero sentinel to
+catch cross-series leakage. Nothing was committed or pushed.
+**Tests:** `PATH=/usr/local/cuda-13.3/bin:$PATH cargo build --release` passed;
+strict `AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo test --release` passed **80/80**
+Rust unit tests, **3/3** build-policy tests, and docs. The focused Plan 19
+CUDA test passed **28/28** (stage errors `1.2918835724298099e-15` and
+`1.2633763496880677e-15`; Julia plasma effect
+`1.5696720458555424e-6`; fixed solve
+`4.960731457415347e-16`; adaptive solve
+`1.3151815943992969e-14`; native-vs-Julia
+`6.537665790889942e-16`). CPU free-space controls passed **15/15**. The
+complete strict `AMALTHEA_REQUIRE_CUDA_TESTS=1 LUNA_TEST_GROUP=rust julia
+--project test/runtests.jl` gate passed **43,352/43,352** in **13m33.1s**.
+`rustfmt --edition 2024 --check` and `git diff --check` passed.
+**Next:** Leave the working tree uncommitted for lead review. The live queue
+is standing required-CUDA CI, which remains deferred by the lead.
+
+## 2026-08-09 — Plan 21 — CUDA free-space RealGrid SDO Raman — Codex (GPT-5)
+**Status:** complete
+**Did:** Added explicit CUDA support for free-space `TransFree` + `RealGrid`
+scalar Kerr with one flattenable SDO `RamanPolarField`, using one resident
+Raman series per flattened transverse point. Both carrier `thg=true` and
+temporal analytic-signal `thg=false` paths now run before the shared free-space
+window and joint 3-D transform; Julia and CPU-native paths remain the oracles.
+**How:** `amalthea/src/cuda_native.rs:3457-3584` inserts the Plan21 intensity,
+batched Hilbert, ADE, and `raman_accumulate_real_fn` sequence into
+`compute_rhs_free_real`; the existing kernels are reused, so no new CUDA
+symbols or FFI exports were required. `:5819-5895` extends
+`set_raman_params`' checked `n_series` sizing to `free_n_y*free_n_x`, creates
+the batched c2c Hilbert plan for `thg=false`, and commits the staged buffers
+transactionally. The existing FFI entry `native_set_raman_params` in
+`amalthea/src/native.rs` is therefore sufficient. `src/RK45.jl:1068-1108`
+admits only one plain Kerr plus one scalar `RamanPolarField` with a flattenable
+1–64 oscillator response, rejects plasma+Raman/EnvGrid Raman/other mixtures,
+and `:1402-1405` keeps free-space CUDA explicit-only. The Julia wiring at
+`:2503-2525` uses the existing `native_set_raman_params` call and the same
+`n_time_over*n_y*n_x` contract.
+**Decisions:** Preserve the exact column-major mapping
+`s=iy+n_y*ix`, `j=s*n_time_over+i`; use existing temporal-only Hilbert masks
+and the shared Plan 12/16 ADE kernels; keep the existing checked allocation
+and transactional commit behavior; and leave EnvGrid Raman, intermediate
+broadening, plasma composition, z-dependent norm/linop, noise, mixtures, and
+`:auto` out of scope. A non-square `10×8` grid and per-point spectral
+perturbations were retained in the test because symmetric fields would not
+reliably expose a spatial-axis or series-state transposition.
+**Gotchas:** `native_set_free_params` must run before the shared Raman setter
+so `free_n_y/free_n_x` and `n_time_over` are available. `thg=false` requires a
+batched c2c plan with batch `n_y*n_x`; the Hilbert filter's temporal index is
+local to each batch and must not be replaced with a joint spatial mask. The
+initial repository-wide `cargo fmt --check` still reports unrelated existing
+benchmark/I/O formatting drift; targeted `rustfmt --edition 2024 --check`
+for `cuda_native.rs`/`native.rs` and `git diff --check` passed. No commit or
+push was made.
+**Tests:** `PATH=/usr/local/cuda-13.3/bin:$PATH cargo build --release`
+passed. The strict focused command
+`PATH=/usr/local/cuda-13.3/bin:$PATH JULIA_DEPOT_PATH=/tmp/luna-julia-depot:/home/diego/.julia JULIA_NUM_THREADS=1 AMALTHEA_REQUIRE_CUDA_TESTS=1 julia --startup-file=no --project -e 'using TestItemRunner; import Amalthea: set_fftw_mode; set_fftw_mode(:estimate); wanted = Set(["test_native_cuda_free_raman.jl"]); @run_package_tests filter=ti->basename(String(ti.filename)) in wanted'`
+passed **44/44** on CUDA 13.3/RTX 5060 Ti. Direct CUDA-vs-CPU stage errors
+were `1.2808485010387304e-15`–`1.3516513356331302e-15`; fixed-solve errors
+were `2.617224103596994e-16` (`thg=true`) and
+`2.681483594052121e-16` (`thg=false`); Julia Raman-on/off effects were
+`1.1762235203942525e-3` and `1.1807377818250002e-3`. The strict full
+`PATH=/usr/local/cuda-13.3/bin:$PATH JULIA_DEPOT_PATH=/tmp/luna-julia-depot:/home/diego/.julia JULIA_NUM_THREADS=1 AMALTHEA_REQUIRE_CUDA_TESTS=1 LUNA_TEST_GROUP=rust julia --startup-file=no --project test/runtests.jl`
+passed **43,445/43,445** in **16m37.2s**; the timing manifest was included.
+**Next:** Leave the working tree uncommitted for lead review. The authoritative
+backlog's separate live operational queue remains standing required-CUDA CI,
+which is still deferred by the lead.
+
+## 2026-08-09 — Plans 15/18 review repair — EnvGrid spectral halves and free c2c teardown — Codex (GPT-5)
+**Status:** complete
+**Did:** Fixed all three review findings: modal EnvGrid synthesis now relocates
+the retained upper spectral half to the end of the oversampled c2c series;
+free-space (and the shared radial caller) now crops that upper half from the end
+after the forward transform; and final CUDA simulation teardown now destroys
+the committed free-space c2c cuFFT plan.
+**How:** `amalthea/src/kernels.cu:511-571` extends
+`modal_synthesize_real_kernel` with an `is_real` argument and selects either
+RealGrid's contiguous half-spectrum or EnvGrid's explicit low/high map;
+`amalthea/src/cuda_native.rs:4620-4657` passes the representation flag through
+the existing resident modal launch. `amalthea/src/kernels.cu:970-993` changes
+`finalize_radial_spectrum_env_kernel` to read output bin `i>=Nω/2` from
+`No-Nω/2+i-(Nω-Nω/2)`; the existing free-space call at
+`amalthea/src/cuda_native.rs:3788-3806` and radial call share that corrected
+kernel. `amalthea/src/cuda_native.rs:6534-6547` adds `free_fft_c2c` to
+`CudaNativeSim::drop`. `test/test_native_cuda_modal_env.jl:144-164` and
+`test/test_native_cuda_free_env.jl:139-163` add full-scale high-half-only
+direct-stage probes, while `amalthea/src/cuda_native.rs:6813-6836` creates a
+real c2c plan, drops its owning simulation, and proves a second destroy fails.
+No FFI symbol or Julia dispatch contract changed.
+**Decisions:** Reused the generic EnvGrid series finalizer because both radial
+and free-space buffers have the same `(n_spec[_over], n_series)` layout; this
+also closes the same latent crop defect for radial EnvGrid. Kept one modal
+synthesis symbol and passed a representation flag so RealGrid retains its
+contiguous r2c input without duplicating the mode/Bessel kernel. Used
+high-half-only probes with amplitudes scaled to the pulse maximum because the
+former phase perturbations preserved negligible physical edge amplitudes and
+therefore did not make either indexing defect observable.
+**Gotchas:** `n_spec` and `n_spec_over` are validated even for these EnvGrid
+paths, so each half contains exactly `n_spec/2` bins. `FreeSetup::drop` already
+released staged c2c plans and `commit_free_setup` already destroyed replaced
+plans; the leak was only the final live `CudaNativeSim::drop` path. The
+lifecycle regression relies on cuFFT returning a nonzero invalid-plan status
+for a second destroy, verified on CUDA 13.3. Existing uncommitted Plans 12-21
+work was preserved; nothing was committed or pushed.
+**Tests:** `rustfmt --edition 2024 --check amalthea/src/cuda_native.rs` and
+`git diff --check` passed. With host CUDA 13.3,
+`PATH=/usr/local/cuda-13.3/bin:$PATH cargo build --release` passed. The focused
+teardown test passed **1/1**; strict `AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo test
+--release` passed **81/81** Rust unit tests, **3/3** build-policy tests, and
+docs. The focused modal/free/radial EnvGrid bucket passed **97/97**: modal and
+free-space high-half-only stage errors were `1.0905464182781277e-15` and
+`1.0958008920889427e-15`, and the shared radial asymmetric stage error was
+`4.262893614543232e-16`. The RealGrid modal/free regression bucket passed
+**66/66**. The complete strict
+`PATH=/usr/local/cuda-13.3/bin:$PATH JULIA_DEPOT_PATH=/tmp/luna-julia-depot:/home/diego/.julia JULIA_NUM_THREADS=1 AMALTHEA_REQUIRE_CUDA_TESTS=1 LUNA_TEST_GROUP=rust julia --startup-file=no --project test/runtests.jl`
+gate passed **43,455/43,455** in **16m13.6s**.
+**Next:** Leave the working tree uncommitted for lead review. The separate live
+queue remains standing required-CUDA CI, still deferred by the lead.
+
+## 2026-08-09 — v1.0.3 release preparation — Codex (GPT-5)
+**Status:** in-progress (combined release prepared; hosted release-branch gate
+pending).
+**Did:** Combined the hosted-green CUDA Plans 12–21 work with the locally
+validated ARM64/CPU-only installation work on `release/1.0.3`. Synchronized
+Julia/Python metadata at `1.0.3`, added the release changelog, and converted
+the temporary installation guidance to final `v1.0.3` commands and platform
+claims.
+**How:** `cd84f6b` records the installation unit; merge commit `2028abc`
+integrates `gpu-plans-12-21-review` commit `5a257de`. The only merge conflicts
+were additive overlaps in `docs/dev/native-port/GPU.md` and this log; both
+records were retained. `Project.toml` and `python/pyproject.toml` now name the
+release version, `CHANGELOG.md` summarizes the GPU/portability surface, and
+`.github/workflows/release.yml` will build four CPU-only assets when the
+matching `v1.0.3` tag is pushed.
+**Decisions:** Use patch version `1.0.3`, matching the development metadata
+already established after `v1.0.2`. Keep CUDA an explicit source build and
+publish portable CPU-only binaries for Linux x86_64/AArch64, macOS AArch64,
+and Windows x86_64. Require the combined hosted matrix and the new ARM64 job
+before tagging even though both input units already passed their own gates.
+**Gotchas:** Amalthea is installed from tagged GitHub revisions rather than
+Julia General, so the README/manual must pin `v1.0.3`. The release tag itself
+triggers binary publication; pushing the release branch alone must not create
+a release. Standing required-CUDA CI remains deferred and is not implied by
+the CPU-only ARM64 job.
+**Tests:** Input CUDA branch hosted run `31331333474` passed. On the combined
+tree, `AMALTHEA_CUDA_BUILD=off cargo test --release` passed **82/82** Rust unit
+tests, **5/5** build-policy tests, and doc-tests. Targeted `rustfmt --check`,
+conflict-marker inspection, and `git diff --check` passed. The final-version
+installer/Phase-0 FFI bucket passed **46/46**. The Documenter build passed
+doctests, cross-references, document checks, and HTML rendering with inventory
+version `1.0.3`; only the expected local remote/deployment detection warnings
+were emitted.
+**Next:** Push `release/1.0.3`, require its test and documentation workflows to
+pass (including native Linux ARM64 installation), then tag the exact tested
+commit and verify all four binaries against `SHA256SUMS.txt`.
+
+## 2026-08-10 — v1.0.3 publication and public-claims audit — Codex (GPT-5)
+**Status:** complete for release publication and repository/GitHub corrections;
+Zenodo v1.0.0 owner metadata edit remains external.
+**Did:** Published `v1.0.3` from the exact combined release-candidate commit,
+verified all four public CPU binaries against the downloaded checksum
+manifest, and advanced development metadata to `1.0.4-DEV` / `1.0.4.dev0`.
+Then corrected the public documentation target, package authorship,
+compatibility wording, historical v1.0.0 dispatch/registry claims, citation
+year, and the unsupported implication of universal native speedup. Added a
+reproducible Julia-oracle versus resident-native comparison and corrected the
+public GitHub v1.0.0 and v1.0.3 release notes.
+**How:** Release-candidate run `31334708624` passed all 17 substantive jobs at
+`65489dd7f89703f4ac80afe91470f89364a63727`, including native Linux ARM64 job
+`93298544991`. Lightweight tag `v1.0.3` points to that SHA. Tag workflow
+`31383860726` published
+`libamalthea-{x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu}.so`,
+`libamalthea-aarch64-apple-darwin.dylib`,
+`libamalthea-x86_64-pc-windows-msvc.dll`, and `SHA256SUMS.txt`; documentation
+workflow `31383860719` deployed the stable manual. `README.md:4-119` now links
+Documenter's `stable/` tree, defines the tested compatibility boundary, and
+publishes the measured comparison and exact command. `Project.toml:3-8`
+records both original Luna.jl authorship and Diego's Amalthea.jl maintenance
+role. `CHANGELOG.md:7-15,117-148` records the post-release audit and annotates
+the historical v1.0.0 inaccuracies. `test/benchmark_julia_vs_native.jl:1-128`
+forces Julia/native CPU paths, fixed randomness, one physical workload,
+warmed repeated complete solves, host/sample reporting, and a `1e-6`
+equivalence gate. `PLANS.md` sections 13-14 and `BACKLOG.md` close the ARM64
+item and retain the public-claims decision record.
+**Decisions:** Treat "performance-engineering" as project direction, not a
+speed guarantee. Compare the resident backend to the retained Luna-compatible
+Julia oracle in one checkout so dependency/version drift cannot masquerade as
+backend speedup, and label it explicitly as not an independently installed
+upstream Luna.jl comparison. Publish the measured non-speedup instead of
+selecting the favorable three-trial sample. Preserve v1.0.0 historical prose
+under a prominent correction instead of silently rewriting history. Keep
+stable documentation under `/stable/`; the Pages root remains only the
+native-step regression dashboard.
+**Gotchas:** The initial three-trial benchmark looked `3.283x` faster because
+the Julia timings were bimodal. Seven trials contradicted it. After forcing
+Julia/OpenBLAS/OMP to one thread and collecting garbage before each timed run,
+the realistic five-trial quickstart comparison was stable and showed native
+slightly slower. The first script run also exposed a top-level Julia
+soft-scope error after timing; explicit field references fixed it. The first
+GitHub release-note API update rendered literal `\n` sequences; public
+verification caught it and a follow-up normalization restored the intended
+callout. Zenodo public API confirms v1.0.0 record `21327636` contains the false
+General-registry claim and supports owner revisions, but no `ZENODO_TOKEN` or
+authenticated Zenodo session is available here, so changing that external
+record is not authorized or technically possible in this environment.
+**Tests:** Redundant tag test run `31383860700` passed its complete matrix.
+Downloaded release assets in `/tmp/amalthea-v1.0.3-8OU9an` passed
+all four `sha256sum -c SHA256SUMS.txt` lines. The controlled five-trial Linux
+x86_64/AMD Zen 3/Julia 1.12.6 benchmark measured Julia-oracle median
+`0.985609 s`, native median `1.113455 s`, ratio `0.885x`, and final-field
+relative error `1.6624194468057829e-9`. Project metadata parsed at
+`1.0.4-DEV` with all three author entries. The full Documenter build passed
+doctests, cross-references, document checks, and HTML rendering; only expected
+local remote/deployment auto-detection warnings remained. `git diff --check`
+and stale-claim/link scans passed; all four corrected stable documentation URLs
+returned HTTP 200.
+**Next:** The Zenodo owner should edit
+`https://zenodo.org/records/21327636` and replace "minted, registered as a new
+package in the Julia General registry" with "minted; install this release
+directly from GitHub." Commit/push this post-release audit, merge the release
+branch into `main`, and require the resulting main test/documentation runs to
+pass. Standing required-CUDA CI remains separately deferred.
