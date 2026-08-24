@@ -1,6 +1,6 @@
 # Amalthea.jl
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20359893.svg)](https://doi.org/10.5281/zenodo.20359893)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20359892.svg)](https://doi.org/10.5281/zenodo.20359892)
 [![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://vdiego28.github.io/Amalthea.jl/stable/)
 [![CI](https://github.com/vdiego28/Amalthea.jl/actions/workflows/run_tests.yml/badge.svg)](https://github.com/vdiego28/Amalthea.jl/actions/workflows/run_tests.yml)
 
@@ -122,6 +122,14 @@ final fields agree within the repository's `1e-6` full-solve tier. The
 [GitHub Pages root](https://vdiego28.github.io/Amalthea.jl/) is a separate
 native-step regression dashboard; it tracks changes over commits and is not a
 Luna-versus-Amalthea comparison.
+
+The focused 2026-08-24 optimization audit on the same Linux Zen 3 host found
+30–48% lower native fixed-step medians and 31–50% lower adaptive-solve medians
+across five affected radial/rotational-Raman/shot-noise fixtures. Per-step
+Julia-visible allocations fell from 16 KB–787 KB to 96 bytes. These are
+pinned-core, ten-sample component results—not a replacement for the complete
+workload benchmark above. Exact commands and JSON interpretation are in
+[`test/performance_audit/README.md`](test/performance_audit/README.md).
 
 ## Installation
 
@@ -321,18 +329,22 @@ This project is a fork of [Luna.jl](https://github.com/LupoLab/Luna.jl), origina
 
 If you use Amalthea.jl in your research, please cite it using the following DOI:
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20359893.svg)](https://doi.org/10.5281/zenodo.20359893)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20359892.svg)](https://doi.org/10.5281/zenodo.20359892)
 
 ```bibtex
-@software{valenzuela_berrios_2026_amalthea,
-  author    = {Valenzuela Berríos, Diego Andrés},
+@software{valenzuela_berrios_2026_amalthea_1_0_3,
+  author    = {Valenzuela Berríos, Diego Andrés and Brahms, Christian and Travers, John C.},
   title     = {Amalthea.jl},
   year      = {2026},
+  version   = {1.0.3},
   publisher = {Zenodo},
-  doi       = {10.5281/zenodo.20359893},
-  url       = {https://doi.org/10.5281/zenodo.20359893}
+  doi       = {10.5281/zenodo.21872422},
+  url       = {https://doi.org/10.5281/zenodo.21872422}
 }
 ```
+
+For a version-independent reference, use the Amalthea.jl concept DOI
+[`10.5281/zenodo.20359892`](https://doi.org/10.5281/zenodo.20359892).
 
 ## References
 1. Kolesik, M., Moloney, J.V., 2004. Nonlinear optical pulse propagation simulation: From Maxwell's to unidirectional equations. Physical Review E - Statistical, Nonlinear, and Soft Matter Physics 70. https://doi.org/10.1103/PhysRevE.70.036604

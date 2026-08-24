@@ -4262,6 +4262,493 @@ and benchmark changes passed their focused local validation before merge.
 **Next:** The live queue is standing required-CUDA CI, still deliberately
 deferred by the lead. Separately, the Zenodo owner should apply the one-line
 v1.0.0 General-registry metadata correction recorded above.
+
+## 2026-08-10 — Process documentation — Performance-audit handoff — Codex (GPT-5)
+**Status:** complete.
+**Did:** Added a durable, decision-complete plan for a future exhaustive CPU
+performance audit and updated the agent/backlog resume surfaces from their
+obsolete v1.0.2 handoff to the completed v1.0.3/main state.
+**How:** `docs/dev/native-port/PERFORMANCE_AUDIT_PLAN.md:1` defines the frozen
+three-way upstream-Luna/Julia-oracle/portable-Rust comparison, exhaustive
+eligible-path matrix, root-cause profiling, ranked recommendation process, and
+1.20x acceptance target. `AGENTS.md:19` now records the v1.0.3 publication,
+post-release integration, external Zenodo action, deferred GPU CI, and the
+audit resume link. `docs/dev/BACKLOG.md:12` points to the plan without promoting
+unmeasured optimizations into live implementation work. No FFI symbol or source
+behavior changed.
+**Decisions:** Keep the installed portable CPU binary as the acceptance
+baseline; host-native code generation is diagnostic only. Preserve the prior
+public-claims task as complete rather than reopening it: the sole Zenodo edit
+requires owner authentication, and standing required-CUDA CI remains an
+explicit lead-deferred task.
+**Gotchas:** The historical 3.5x-looking sample was contradicted by the stable
+five-trial result (Julia/native ratio 0.885x). The audit must reproduce and
+explain that reversal before proposing production changes. This handoff does
+not authorize committing, pushing, or implementing those changes.
+**Tests:** Documentation-only change. `git diff --check` passed, and targeted
+claim/link/state searches confirmed the stable documentation URL, qualified
+compatibility wording, three-author package metadata, historical changelog
+annotation, and retained 0.885x comparison. The public Zenodo API still returns
+revision 4, last modified 2026-07-12, with the false General-registry sentence;
+`ZENODO_TOKEN` remains absent. No Julia, Rust, or CUDA tests were needed.
+**Next:** In a new conversation, read `AGENTS.md` and
+`docs/dev/native-port/PERFORMANCE_AUDIT_PLAN.md`, then execute the audit from
+its first incomplete checkpoint. Separately, the Zenodo owner can apply the
+one-line v1.0.0 correction already recorded in the preceding entry.
+
+## 2026-08-10 — Public metadata — Citation metadata repair — Codex (GPT-5)
+**Status:** complete.
+**Did:** Expanded the existing minimal `CITATION.cff` into complete CFF 1.2.0
+metadata and corrected the README's stale Zenodo identifiers and incomplete
+software citation.
+**How:** `CITATION.cff:1` now records the three credited authors, current
+v1.0.3 release/date, MIT license, source and documentation URLs, version DOI
+`10.5281/zenodo.21872422`. `README.md:3,303-320` uses all-versions concept DOI
+`10.5281/zenodo.20359892` for the project badges and the v1.0.3 DOI for the
+versioned BibTeX citation. No FFI symbol or runtime behavior changed.
+**Decisions:** Use the immutable version DOI for the explicit v1.0.3 citation
+and CFF output, and the concept DOI for version-independent README links. Do
+not put both identifiers into `CITATION.cff`: `cffconvert` prefers the first
+additional DOI over the top-level version DOI, producing the wrong versioned
+citation. Preserve Diego as the fork maintainer/first citation author while
+crediting Christian Brahms and John C. Travers as the original Luna.jl authors,
+matching package and Zenodo metadata.
+**Gotchas:** The former identifier `10.5281/zenodo.20359893` is valid but is the
+specific archived v0.7.0 release, not the Amalthea concept DOI. DOI resolution
+confirmed that the concept DOI is `20359892` and currently resolves to v1.0.3
+record `21872422`.
+**Tests:** PyYAML parsed the file as CFF 1.2.0 with three authors and the v1.0.3
+DOI. Official `cffconvert 2.0.0 --validate` passed: "Citation metadata are valid
+according to schema version 1.2.0." DOI resolution confirmed `20359893` as the
+v0.7.0 record, `20359892` as the concept DOI, and `21872422` as v1.0.3.
+Targeted stale-identifier search and `git diff --check` passed. No Julia, Rust,
+or CUDA behavior changed.
+**Next:** Verify the corrected Zenodo v1.0.0 description after the owner
+publishes it. The future CPU performance audit remains specified in
+`PERFORMANCE_AUDIT_PLAN.md`.
+
+## 2026-08-11 — Public metadata — Zenodo correction verification — Codex (GPT-5)
+**Status:** complete.
+**Did:** Verified the owner's published v1.0.0 Zenodo metadata correction and
+closed the final external item from the public-claims audit.
+**How:** The public API for Zenodo record `21327636` reports revision 6,
+modified `2026-08-10T12:30:46.795460+00:00`. Its description now includes the
+historical compatibility/dispatch/registry correction notice and replaces the
+false General-registry phrase with direct-GitHub installation guidance.
+`AGENTS.md:19`, `docs/dev/BACKLOG.md:7`, and `PLANS.md` section 14 now mark the
+repository, GitHub, and Zenodo work complete. No archived file, DOI, FFI symbol,
+or runtime behavior changed.
+**Decisions:** Treat a prominent historical correction as the transparent
+repair instead of silently deleting all original v1.0.0 prose. The owner used
+Zenodo's metadata-only edit path, preserving record DOI
+`10.5281/zenodo.21327636` and the archived release artifact.
+**Gotchas:** The original inaccurate sentences remain visible as historical
+text below the correction notice; the notice explicitly supersedes them. This
+is intentional and matches the repository/GitHub historical-note treatment.
+**Tests:** Public Zenodo API read confirmed revision 6, the replacement text,
+the correction notice, unchanged DOI, and unchanged archive checksum
+`md5:f36e87c5fb00baf2cae0c51a81dc370b`. `git diff --check` and targeted stale
+pending-status searches passed; no Julia, Rust, or CUDA tests were needed.
+**Next:** The public-claims audit is fully closed. Standing required-CUDA CI
+remains lead-deferred; the future CPU performance audit is fully specified in
+`PERFORMANCE_AUDIT_PLAN.md`.
+
+## 2026-08-11 — CPU performance audit — Checkpoint 1 frozen baseline and inventory — Codex (GPT-5)
+**Status:** complete for checkpoint 1; the overall audit remains in progress.
+**Did:** Froze the Amalthea/Julia-oracle and upstream-Luna revisions, built and
+hashed the installed-contract portable CPU library, captured the host/toolchain/
+dependency state, and derived an exhaustive non-redundant resident-CPU workload
+inventory from the live eligibility guards. Added the initial audit report and
+a validator covering 49 branch fixtures across all four geometries, both grids,
+and small/medium/large sizes. No production source or FFI symbol changed.
+**How:** `test/performance_audit/capture_baseline.py:129-265` verifies Amalthea
+`73e32dcf45d93f11136d419faeae3b3641c9577d`, upstream Luna
+`0a52ffbba6d5dd6820bb3dc3c300b8b38d724214`, clean runtime source/dependency
+metadata, and the portable artifact, then writes atomic JSON containing
+project/manifest hashes, Julia/Rust/FFTW/BLAS versions, CPU topology/microcode,
+memory, affinity, governor/boost, perf permissions, and relevant thread/backend
+environment. `test/performance_audit/workloads.toml:1` records 16 mode-averaged,
+11 radial, 13 modal, and 9 free-space control-flow fixtures plus orthogonal
+timing/counter/thread sweeps. `validate_inventory.py:18-82` enforces unique IDs,
+three sizes, provenance, geometry/grid coverage, upstream classification, and
+the required physics/representation feature set. `README.md:7-83` defines six
+resume checkpoints; `PERFORMANCE_AUDIT_REPORT.md:6-63` records the frozen
+baseline, inventory method, limitations, and non-conclusion status.
+**Decisions:** Treat `src/RK45.jl`'s `NativeIneligible` guards and FFI setter
+branches as authoritative; use `NATIVE_SUPPORT_MATRIX.md` and existing native
+tests only as cross-checks. Freeze upstream at the freshly fetched
+`upstream/master` SHA (unchanged from the July review) rather than allow future
+upstream motion to contaminate this baseline. Build the acceptance artifact via
+`deps/build.jl` with `RUSTFLAGS=''`, `AMALTHEA_CUDA_BUILD=off`, and download
+disabled, because a manual Cargo build would inherit `target-cpu=native` and is
+only a diagnostic variant. Keep questionable source/matrix cells as explicit
+checkpoint-2 probes; no timing result is admissible before backend observability
+and correctness gates pass.
+**Gotchas:** The derived support matrix is stale in at least three cells: it
+labels modal and free-space Kerr mixtures as fallback although current source
+contains explicit resident branches, and labels radial EnvGrid mixtures as
+fallback although the current radial mixture guard is grid-independent. These
+are not yet claimed supported; the runnable fixture checkpoint must construct
+them and prove `_native_backend(s) == :cpu`. The host is `powersave` with AMD
+P-state active and boost enabled; that exact state is captured. Hardware
+counters are unavailable unprivileged (`perf_event_paranoid=4`), so the later
+profile checkpoint will require approved elevated execution. Existing dirty
+documentation/public-metadata work was preserved; baseline validation found no
+dirty `src/`, `amalthea/src/`, `Project.toml`, or `Manifest.toml` path.
+**Tests:** Fresh read-only `git fetch upstream master` resolved to
+`0a52ffbba6d5dd6820bb3dc3c300b8b38d724214`. The portable build command
+`AMALTHEA_RUST_SKIP_DOWNLOAD=1 AMALTHEA_CUDA_BUILD=off RUSTFLAGS='' julia
+--startup-file=no --project deps/build.jl` passed; resulting
+`amalthea/target/release/libamalthea.so` is 1,402,480 bytes with SHA-256
+`a333b99705d54cfc5f38ada3ce6e4f1eae12ba4a32ca76f38f559f8c844eb25b`.
+`python3 test/performance_audit/validate_inventory.py` passed all 49 fixtures;
+`capture_baseline.py` passed both commit pins, artifact presence, and clean
+runtime-source checks. The focused portable-artifact `test_rust_ffi.jl` bucket
+passed 2/2. Python syntax compilation and `git diff --check` passed.
+**Next:** Checkpoint 2: implement isolated runnable fixture construction and
+correctness/non-vacuity gates, starting with the mode-averaged RealGrid flagship
+and all three mixture discrepancy probes; resolve every `upstream="probe"`
+classification before collecting the timing matrix.
+
+## 2026-08-13 — CPU performance audit — Checkpoint 2 correctness and upstream equivalence — Codex (GPT-5)
+**Status:** complete for checkpoint 2; the overall audit remains in progress.
+**Did:** Implemented all 49 inventory fixture constructors at small, medium, and
+large sizes; added fresh-process Julia/Rust single-step, fixed-trajectory, CPU
+backend-observability, and physical-feature non-vacuity gates; and resolved
+every provisional pinned-upstream classification. Added isolated Julia/Rust/
+upstream sample runners, raw field serialization, checkpoint/resume/timeout
+orchestration, a three-size upstream probe, and explicit invalid-oracle gates.
+No production source or FFI symbol changed.
+**How:** `test/performance_audit/fixtures.jl` builds every branch recorded in
+`workloads.toml`; `check_fixture.jl` constructs `RK45.PreconStepper` and
+`RK45.RustNativeStepper`, asserts `RK45._native_backend(...) == :cpu`, compares
+one accepted step at the documented tier and a fixed-step solve, and compares
+against a feature-disabled Julia control. `run_correctness.py` checkpoints all
+three sizes. `probe_upstream.py` invokes `run_sample.jl` and
+`run_upstream_sample.jl` in separate projects/depots and compares raw
+`fixed_solve_raw` terminal state, deliberately bypassing pinned Luna's known
+deferred-FSAL dense-output defect. The timing runner additionally exposes the
+existing `set_field`/`get_ks_stage` FFI symbols for isolated native RHS timing;
+no ABI was added or changed.
+**Decisions:** Treat manually constructed mode-averaged EnvGrid PPT/ADK as
+invalid audit cells, not supported branches: Julia `PlasmaScalar!` throws
+`InexactError` on the complex envelope and the public API does not expose the
+combination. Preserve the documented modal `1e-10` tier instead of widening it:
+four- and eight-mode non-Raman cells fail it, so they are excluded from timing
+pending root-cause work. Compare upstream raw terminal state because its dense
+interpolant otherwise creates a false `2.25e-6` modal mismatch. Classify
+`free_real_zdependent` as fork-only because pinned Luna lacks
+`LinearOps.make_linop_free_gradient`.
+**Gotchas:** Modal correctness is size-dependent: small non-Raman modal cases
+pass, but medium failures range from `2.2026e-10` to `8.9008e-8`, and large
+failures range from `3.4434e-8` to `1.5086e-7`. Modal Raman cases use their
+separately documented reassociation tiers and pass. Large free-space probes are
+memory-intensive; four concurrent processes made no progress, while serial or
+two-worker execution completed. Pure equivalence probes set
+`AMALTHEA_AUDIT_WARMUPS=0`; timing retains two warmups.
+**Tests:** `run_correctness.py` results: small 47/49, medium 36/49, large 36/49.
+Every admitted cell passed its fixture-specific single-step tier, fixed-solve
+tier, non-vacuity check, and resident-CPU assertion. Pinned-upstream raw-state
+equivalence: small 46/46 (worst `7.902832940604446e-11`), medium 46/46 (worst
+`2.7645567126914224e-13`), large admissible common subset 35/35 (worst
+`7.796588377966324e-14`); all maxima were `modeavg_env_raman_sio2` and all were
+inside `1e-6`. `validate_inventory.py` passed 49 fixtures, all Python files
+compiled, `git diff --check` passed, and the portable library remained SHA-256
+`a333b99705d54cfc5f38ada3ce6e4f1eae12ba4a32ca76f38f559f8c844eb25b`.
+**Next:** Checkpoint 3: collect randomized, converged one-core adaptive-solve
+and component timing matrices for every admitted cell, then allocations/RSS,
+hardware counters, and 1/2/4/6-core scaling for threaded geometries. Run the
+modal cubature diagnostic independently while keeping failed cells excluded
+from performance conclusions.
+
+## 2026-08-21 — CPU performance audit — Checkpoint 3 timing protocol and medium matrix — Codex (GPT-5)
+**Status:** in-progress; the medium adaptive matrix is complete and the large
+adaptive matrix is actively resuming from saved observations.
+**Did:** Converged the one-core medium Julia/Rust adaptive-solve matrix, found
+and excluded an adaptive-only z-dependent correctness failure, and replaced
+the unnecessarily expensive fresh-process-per-observation timing protocol with
+isolated persistent backend sessions. Added equivalent persistent-session
+support for the pinned upstream project. No production source or FFI symbol
+changed.
+**How:** `test/performance_audit/run_matrix.py:114-255` now creates one clean,
+CPU-affined Julia process per implementation, sends one seeded randomized
+round-robin observation per request, enforces the per-request timeout, and
+retains the existing 10--30-sample MAD/bootstrap convergence gates.
+`run_sample_core.jl:17-243` recreates fixture/stepper state for every
+observation but performs the two mandated warmups only on first use of a
+fixture/size/measurement tuple in `run_sample_session.jl`; the upstream pair
+uses the same protocol in `run_upstream_sample_core.jl` and
+`run_upstream_sample_session.jl`. Schema 2 records `process_mode` and
+`warmups_performed`. Persistent `Sys.maxrss()` values are excluded from the
+summary; saved fresh-process observations and the dedicated RSS/counter pass
+remain the peak-RSS evidence.
+**Decisions:** Keep competing implementations in different OS processes, as
+required by the frozen plan, but do not launch a new process for every timing
+observation because the plan does not require that and it triples full-solve
+work. Preserve one-observation randomized rounds rather than batch consecutive
+cell repetitions. Exclude `free_real_zdependent` from adaptive performance
+claims: its fixed-step gate passes, but medium adaptive output differs by
+`1.45314e-2` with identical four-accepted/zero-rejected step counts. Its saved
+timings remain diagnostic.
+**Gotchas:** The original large protocol meant 72 cells x 10 observations x
+(two warmups + one timed solve) = 2,160 large solves. Three complete rounds and
+16 cells of round 03 were already valid and are reused. Persistent-process RSS
+is cumulative and cannot be attributed to the current cell. The refactored
+upstream session has been syntax-checked but must not be runtime-smoke-tested
+while the CPU-affined large matrix is active, because concurrent compilation or
+benchmarking would contaminate it.
+**Tests:** `matrix-adaptive_solve-medium.json` converged 72 backend cells for
+36 fixtures at 10--18 samples/cell. Excluding the adaptive-invalid z-dependent
+cell, the 35-fixture Julia/native geometric-mean ratio is `1.1090602467x`;
+geometry ratios are mode-averaged `1.21795x`, radial `1.00471x`, admitted modal
+Raman `1.54077x`, and free-space `0.99331x`. Fifteen fixtures regress by more
+than 5%. A two-round persistent `setup` smoke matrix passed field equivalence
+exactly and recorded warmups `2,0` per backend; a persistent `fixed_rhs` smoke
+matrix passed at relative error `3.312689885175966e-16`. The hardest resumed
+large Rust cell measured `180.820654573 s`, consistent with its three saved
+fresh-process values `181.072052179--183.068937325 s`. Python compilation and
+`git diff --check` passed. The portable runtime artifact remains unchanged
+from checkpoint 1; the active large run increased the saved observation count
+from 232 to 241 at this log entry.
+**Next:** Let the resumed large adaptive matrix reach 10--30-sample
+convergence, validate the upstream session after the run releases the timing
+core, then collect component, allocation/RSS, counter, and 1/2/4/6-core scaling
+matrices before beginning root-cause profiles or production optimization.
+
+## 2026-08-21 — CPU performance audit — Checkpoint 3 adaptive matrices complete — Codex (GPT-5)
+**Status:** in-progress; accepted one-core medium/large adaptive timing is
+complete, while component, dedicated RSS/counter, and thread-scaling sweeps
+remain.
+**Did:** Completed the resumable large adaptive sweep (808 raw observation
+JSONs), regenerated correctness/stability-accepted medium and large summaries,
+and produced the combined machine analysis. Hardened persistent sample sessions
+against missing upstream projects, startup/request timeouts, leaked children,
+and multi-GiB discarded native warmups. No production source or FFI symbol
+changed.
+**How:** `run_sample_core.jl` now explicitly finalizes each discarded
+`RustNativeSimHandle` and the measured handle after field serialization, with
+full GC before/between warmups; the upstream core applies the corresponding
+Julia cleanup. `run_matrix.py` uses binary timeout-aware session IPC, records
+logs, recycles above 6 GiB post-sample RSS, validates the pinned upstream
+`Project.toml`, and excludes persistent-session `Sys.maxrss()` from per-cell
+RSS summaries. `analyze_matrices.py` accepts schema 2, rejects any failed field
+check or non-converged cell, and records sample/MAD/CI evidence per row.
+**Decisions:** Preserve all correctness-admissible raw timings, but exclude a
+fixture pair from accepted aggregates when its adaptive trajectory fails or
+either backend exhausts 30 samples without the frozen stability gates. Large
+accepted exclusions are `free_real_zdependent`, both modal Raman fixtures, and
+radial real PPT/ADK. Keep their results in
+`matrix-adaptive_solve-large-correctness-admissible.json`; do not widen
+tolerances or hide capped variability. Recreate the exact pinned upstream
+archive/manifest after `/tmp` cleanup rather than allow Julia's nonexistent
+`--project` path to silently select an empty environment.
+**Gotchas:** The first persistent large process was kernel-OOM-killed at 45.2
+GiB because discarded warmup native handles accumulated. Explicit finalization
+fixed the lifecycle, but one `free_env_kerr/rust` request still peaks at 33.3
+GiB. A missing `/tmp/amalthea-upstream-0a52ffb` path does not make Julia fail
+early; the harness must validate it. Large modal Raman Rust takes 10 accepted
+steps versus Julia's 9, producing adaptive field errors `2.04562e-6` (THG,
+`1e-6` tier) and `1.91107e-6` (no-THG, `1.5e-6` tier). Julia radial PPT and ADK
+remain unstable at 30 samples (MAD 5.11% and 4.28%).
+**Tests:** The exact former OOM cell completed two warmups plus measurement at
+68.3933 s, 3 accepted/0 rejected steps, and 33.3-GiB process peak. Three-way
+persistent `modeavg_real_kerr/small/setup` passed Julia/Rust/upstream field
+equivalence exactly with two warmups in every isolated process. Accepted medium
+summary: 35/35 correctness, all cells converged. Accepted large summary: 31/31
+correctness, all cells converged. Combined 66-pair geometric-mean Julia/native
+ratio is `1.1191257300x`; mode-averaged `1.2842891543x`, radial
+`0.9722259703x`, free `1.0076021685x`, admitted modal `1.5407732520x`; 27 pairs
+regress by more than 5%. Python compilation and `git diff --check` passed. The
+portable library remains SHA-256
+`a333b99705d54cfc5f38ada3ce6e4f1eae12ba4a32ca76f38f559f8c844eb25b`.
+**Next:** Collect converged setup, field-sync, fixed-RHS, fixed-step,
+fixed-solve, dense-output, and result-copy component matrices with the same
+accepted fixtures; then dedicated peak RSS/hardware counters and 1/2/4/6-core
+scaling. Only after checkpoint 3 is complete begin historical reconciliation
+and sampled profiles.
+
+## 2026-08-21 — CPU performance audit — Checkpoint 3 medium component timing — Codex (GPT-5)
+**Status:** in-progress; six medium component matrices are complete, while
+medium result-copy, other sizes, dedicated RSS/counters, and thread scaling
+remain.
+**Did:** Completed correctness- and stability-gated medium setup, field-sync,
+fixed-RHS, one-step, fixed-solve, and dense-output matrices. Replaced
+under-resolved or excessive fixed repetition batches with calibrated
+microbenchmarks and exact one-step observations. Preserved every superseded,
+unstable, or correctness-invalid result as diagnostic data. No production
+source or FFI ABI changed.
+**How:** `test/performance_audit/run_sample_core.jl` and
+`run_upstream_sample_core.jl` calibrate `field_sync`, `fixed_rhs`,
+`dense_output`, and `result_copy` requests to about 20 ms, while
+`fixed_step` records exactly one complete step. `run_matrix.py` gates
+`fixed_rhs` against the independent strict single-step record and retains the
+synthetic repeated-batch field error separately. Native component probes use
+the existing `native_resync_field`, `set_field`, and `get_ks_stage` symbols.
+`analyze_matrices.py` now combines the six accepted component files with the
+adaptive matrices in `results/matrix-analysis.json`.
+**Decisions:** Do not discard noisy branches merely because a microbenchmark
+batch is shorter than the scheduler noise floor; calibrate timed work and
+rerun. Conversely, do not force five full steps or 200 dense interpolations
+when one operation is already expensive; independent 10--30 round-robin
+observations provide replication. Exclude only both members of a fixture pair
+when either backend exhausts the frozen stability gate. Preserve the
+`free_real_zdependent` raw timings but exclude it from fixed-solve and
+dense-output claims because post-solve interpolation fails at `3.32954e-4`
+for the fixed solve (tier `1e-6`). Treat repeated-Raman RHS drift as a synthetic
+state-reuse diagnostic, not evidence against the already-frozen fresh-step
+correctness gate.
+**Gotchas:** The first medium field-sync pass used 20 calls and left 13/72
+backend cells unstable; it is `matrix-field_sync-medium-underresolved.json`.
+Rust setup for `free_real_kerr` and `free_real_mixture` remained above 3% MAD
+at 30 samples and is excluded from the 34-pair aggregate. An aborted five-step
+trial found per-step latency from 0.24 ms to 1.27 s; an aborted 200-call
+dense-output trial included a 7-ms modal interpolation. Their raw directories
+are retained with explicit diagnostic suffixes. Dense output required as many
+as 28 observations even after calibration.
+**Tests:** All accepted cells passed post-timing or frozen strict correctness
+and the 3% MAD/5% bootstrap gates. Setup: 34 pairs, `0.9094213544x`, 15
+regressions >5%. Field sync: 36 pairs, `0.6821906304x`, 26 regressions. Fixed
+RHS: 36 pairs, `1.1974052069x`, 11 regressions. One fixed step: 36 pairs,
+`1.0065832617x`, 20 regressions. Fixed solve: 35 pairs, `1.3815895590x`, six
+regressions. Dense output: 35 pairs, `1.5077955085x`, six regressions. Commands
+used `python3 test/performance_audit/run_matrix.py --size medium --measurement
+MEASUREMENT --minimum-samples 10 --maximum-samples 30 --core 2 --threads 1
+--timeout 3600 --session-rss-limit-gib 6`, with explicit measurement-specific
+exclusions recorded in each JSON. `analyze_matrices.py` accepted all six
+canonical summaries; `git diff --check` passed. The portable library remains
+SHA-256 `a333b99705d54cfc5f38ada3ce6e4f1eae12ba4a32ca76f38f559f8c844eb25b`.
+**Next:** Complete medium result-copy timing, then collect the required small
+and large component evidence, dedicated allocation/RSS/counter passes, and
+1/2/4/6-core scaling before historical reconciliation and profiling.
+
+## 2026-08-21 — CPU performance audit — Checkpoint 3 medium result-copy timing — Codex (GPT-5)
+**Status:** complete for medium component timing; checkpoint 3 remains in
+progress for the other sizes, dedicated RSS/counters, and thread scaling.
+**Did:** Defined and completed the medium result-copy component after two
+diagnostic attempts exposed invalid-buffer and allocation/GC measurement
+problems. No production source or FFI symbol changed.
+**How:** `run_sample_core.jl` and `run_upstream_sample_core.jl` now materialize
+`interpolate(stepper, flength)` outside timing, allocate a destination outside
+timing, and calibrate repeated `copyto!` calls to about 20 ms. This matches the
+preallocated `yout .= interpolate(...)` seam in `src/RK45.jl:179-183`. Raw
+timings, fields, repetition counts, allocations, MAD, and bootstrap intervals
+remain machine-readable under `test/performance_audit/results/`.
+**Decisions:** Reject direct copying of `stepper.yn`: after adaptive termination
+it is an internal right-hand proposal and, for `RustNativeStepper`, a Julia-side
+resident synchronization buffer, not the terminal result requested at
+`flength`. Reject allocating `copy(result)` as the primary microbenchmark:
+28/70 backend cells remained unstable at 30 samples because allocation/GC
+noise overwhelmed copy latency. Use preallocated `copyto!` for the production
+output seam and retain full-solve allocation metrics separately. Exclude a
+whole fixture pair when either member caps unstable; do not loosen gates.
+**Gotchas:** The accepted preallocated pass still capped five backend cells in
+three free-space fixture pairs: `free_real_adk`, `free_real_raman_thg`, and
+`free_real_raman_nothg_rotational`. `free_real_zdependent` remains excluded
+because materializing the terminal interpolant traverses its known invalid
+seam. The two rejected attempts are preserved as
+`matrix-result_copy-medium-raw-yn*` and
+`matrix-result_copy-medium-allocating-copy*`; the full preallocated diagnostic
+is `matrix-result_copy-medium-correctness-admissible.json`.
+**Tests:** The corrected single-cell smoke passed at relative error
+`3.5272739162e-16`. The full preallocated matrix passed 35/35 field checks;
+after the three capped fixture pairs were excluded, the accepted summary has
+32/32 correct and converged pairs, `0.9977264700x` Julia/Rust geometric mean,
+one regression >5%, and 10--12 samples per included cell. The complete medium
+component set now covers setup, field sync, fixed RHS, one fixed step, fixed
+solve, dense output, and result copy. `analyze_matrices.py` accepted all seven
+canonical component summaries with both adaptive summaries; `git diff --check`
+passed.
+**Next:** Collect the required small and large component matrices, then
+dedicated peak RSS/hardware counters and 1/2/4/6-core scaling before beginning
+historical reconciliation and profiles.
+
+## 2026-08-21 — CPU performance audit — Checkpoint 3 small timing matrices — Codex (GPT-5)
+**Status:** complete for small adaptive and component timing; checkpoint 3
+remains in progress for large components, dedicated RSS/counters, and thread
+scaling.
+**Did:** Completed the small adaptive-solve matrix and all seven component
+matrices under the same correctness, randomized sampling, and uncertainty
+protocol as medium/large timing. No production source or FFI symbol changed.
+**How:** `run_matrix.py --size small` collected adaptive solve, setup,
+field-sync, fixed-RHS, exact one-step, fixed-solve, calibrated dense-output,
+and preallocated result-copy observations on physical core 2 with one Julia,
+FFTW, BLAS, and OMP thread. `analyze_matrices.py` now includes accepted small,
+medium, and large adaptive rows plus all accepted small/medium components.
+**Decisions:** Preserve small-specific correctness rather than reuse medium
+exclusions: the strict gate admits 47 fixtures, including non-Raman modal
+branches. Exclude `modal_real_tapered` from adaptive/fixed-solve/output claims
+after post-timing interpolation failed; retain its raw timings. Exclude the
+known `free_real_zdependent` interpolation seam. Exclude
+`modeavg_env_raman_sio2` only from accepted result-copy aggregation because its
+Julia copy cell exhausted stability gates; do not generalize that exclusion to
+other components.
+**Gotchas:** `modal_real_tapered` is raw-state-correct but differs by
+`1.1818034e-6` in the small adaptive terminal interpolant (tier `1e-6`) and
+`4.3980615e-4` in fixed-solve interpolation. Small field synchronization is
+the dominant fixed-cost regression at `0.45356x`; 46/47 pairs regress by more
+than 5%. `modeavg_env_raman_sio2` result-copy Julia timing capped at 6.68% MAD
+and 7.07% CI half-width after 30 samples.
+**Tests:** Accepted geometric-mean Julia/Rust ratios and regression counts are:
+adaptive 45 pairs `1.0886019044x`/18; setup 47 `0.9934799203x`/3; field sync
+47 `0.4535552032x`/46; fixed RHS 47 `1.2179550115x`/17; one fixed step 47
+`1.0576231772x`/18; fixed solve 45 `1.4254985033x`/9; dense output 45
+`1.4474619255x`/6; result copy 44 `0.9812758673x`/2. Every accepted cell passes
+correctness and both stability gates. `analyze_matrices.py` accepted the
+canonical summaries and `git diff --check` passed.
+**Next:** Collect large setup, field-sync, fixed-RHS, one-step, fixed-solve,
+dense-output, and result-copy matrices, then dedicated peak RSS/hardware
+counters and 1/2/4/6-core scaling.
+
+## 2026-08-24 — CPU performance audit — Preliminary optimization handoff — Codex (GPT-5)
+**Status:** exhaustive campaign paused by the lead; preliminary results are
+complete and ready to guide focused optimization.
+**Did:** Stopped the active large fixed-RHS sweep at the lead's request and
+wrote `docs/dev/native-port/PERFORMANCE_AUDIT_PRELIMINARY_RESULTS.md`, a
+self-contained coverage, correctness, timing, limitation, and ranked
+optimization handoff. Added accepted large setup and field-sync matrices to
+`test/performance_audit/results/matrix-analysis.json`. No production runtime
+source or FFI ABI changed.
+**How:** The preliminary report uses only canonical matrices accepted by
+`analyze_matrices.py`: all three adaptive sizes, every small/medium component,
+and large setup/field-sync. It explicitly excludes the interrupted large
+fixed-RHS directory (43 per-sample JSON files, no matrix summary). The report
+links the frozen baseline, branch inventory, combined rows, harness protocol,
+and detailed evolving report. `run_matrix.py` now emits flushed per-cell
+`starting`/`completed` markers around the randomized loop so any future long
+run can identify its active request without repeated filesystem searches. The
+existing native symbols observed by the component probes remain `set_field`,
+`native_resync_field`, and `get_ks_stage`.
+**Decisions:** Honor the lead's scope change: preserve the exhaustive plan and
+raw results, but begin optimization discovery from completed evidence instead
+of spending more quota on the remaining broad matrices. Rank synchronization,
+radial RealGrid RHS/step execution, rotational Raman/shot noise, setup reuse,
+and small-workload fallback in that order. Do not present these as proven root
+causes: counters, profiles, scaling, upstream timings, Amdahl ceilings, and
+independent prototypes have not been collected. Dense output and preallocated
+result copying are explicitly poor first targets because they are already fast
+or at parity.
+**Gotchas:** The first attempted large fixed-RHS session became stale without
+creating a sample. A clean restart completed requests normally, proving the
+silence was the execution session rather than a multi-minute first fixture.
+The restarted sweep was deliberately terminated and its partial samples are
+diagnostic only. `CpuNativeSim::set_field` currently copies the incoming field
+and clones `sim.field` before stage-0 RHS dispatch; this is a concrete code path
+to profile, not yet a measured attribution. The accepted medium radial split
+is the clearest branch target (`0.81405x` fixed RHS and `0.77898x` one step).
+**Tests:** Rebuilt `matrix-analysis.json` from 19 canonical matrix summaries;
+`analyze_matrices.py` rejected no input. Machine-data cross-checks reproduce
+all headline accepted counts/ratios: small adaptive 45/`1.08860x`; medium
+35/`1.10906x`; large 31/`1.13060x`; medium+large 66/`1.11912573x` with 27
+regressions over 5%; large setup 36/`0.97582499x`; large field sync
+35/`0.85420833x`. Python compilation of `run_matrix.py` and targeted
+`git diff --check` passed. No numerical or production test was required for
+the documentation/progress-output-only change.
+**Next:** Use the five-fixture profiling set in the preliminary report to
+measure synchronization and RHS substage ceilings, then prototype one change
+at a time. The first production candidate is reduced/deferred field
+synchronization if a focused end-to-end A/B test proves at least 5% gain while
+preserving rejection, callback, windowing, output, and lifetime semantics.
+
 ## 2026-08-24 — CPU optimization and concurrency — Native ownership, QDHT BLAS, Raman SIMD, modal/scans — Codex (GPT-5)
 **Status:** complete on the available x86_64 Linux host; Apple-host execution
 is the documented follow-up.
@@ -4439,3 +4926,48 @@ NEON/QDHT/topology levers, and retain the result. Promote thin LTO only if that
 Apple result and a repeated local end-to-end run both exceed 5% with all gates
 green. Standing required-CUDA CI remains a separate deliberately deferred lead
 decision.
+
+## 2026-08-24 — v1.0.4 release-candidate assembly and upstream refresh — Codex (GPT-5)
+**Status:** candidate branch pushed; release deliberately blocked pending
+hosted tests, Apple execution, and the DOPRI correctness repair.
+**Did:** Pushed `codex/cpu-apple-concurrency-optimization` so GitHub Actions can
+exercise the implementation commit. Advanced `Project.toml` and
+`python/pyproject.toml` to `1.0.4`, converted the changelog's development
+section into the candidate release section, and retained the public README,
+installation examples, citation version, and Zenodo DOI at the actually
+published `v1.0.3`. Added the complete performance-audit harness and compact
+canonical JSON evidence while excluding about 20 GiB of regenerable snapshots
+and per-observation logs.
+**How:** `.gitignore` excludes only subdirectories and binary/log artifacts
+under `test/performance_audit/results/`; top-level baseline, correctness,
+matrix, and upstream-summary JSON remains versioned. Fetched upstream Luna
+through `08a53b3` and recorded the review in
+`docs/dev/native-port/UPSTREAM_TRIAGE.md`. No tag, GitHub Release, or published
+asset was created.
+**Decisions:** Keep the audit comparison frozen at upstream `0a52ffb`; the
+refresh is triage, not a silent benchmark-baseline change. Treat upstream
+`1d7e4c3` as a v1.0.4 blocker because Amalthea's Julia, legacy Rust, resident
+CPU, and CUDA implementations all propagate the historically mislabeled
+embedded fourth-order weights by default, so current equivalence tests share
+the same oracle defect. Do not mix that trajectory-changing correction into
+the already benchmarked CPU optimization commit. Record Tsitouras and the
+`spectral_phase` alias as later compatibility work because neither is on the
+active RK45 path.
+**Gotchas:** A green current matrix cannot clear the DOPRI blocker. The repair
+changes every trajectory and therefore needs exact order conditions, fifth-
+versus-fourth convergence, FSAL equality, endpoint continuity, rejection and
+dense-output tests, plus Julia/legacy/resident/CUDA parity. Public version and
+citation links must not claim v1.0.4 before the tag and Zenodo record exist.
+**Tests:** `python3 -m py_compile test/performance_audit/*.py` passed.
+`validate_inventory.py` validated all 49 fixtures across free/modal/modeavg/
+radial and RealGrid/EnvGrid. `analyze_matrices.py` accepted the 19 canonical
+matrix inputs and wrote `/tmp/amalthea-release-matrix-analysis.json`.
+`JULIA_DEPOT_PATH=/tmp/amalthea-release-julia-depot:/home/diego/.julia julia
+--startup-file=no --project -e ...` parsed and asserted Julia package version
+`1.0.4`; the Python metadata is the matching `1.0.4`. `git diff --cached
+--check` passed. Release-focused cross-platform validation is delegated to the
+pushed branch's GitHub Actions run. The prior optimization entry contains the
+authoritative local Rust/Julia/documentation results and unchanged tolerances.
+**Next:** Commit and push the candidate metadata/evidence, inspect every hosted
+job, run the Apple quick diagnostic on M-series hardware, implement and
+validate the coordinated DOPRI correction, then repeat the full release gate.

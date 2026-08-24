@@ -1,0 +1,285 @@
+{
+  "captured_at_utc": "2026-08-12T12:54:51.708582+00:00",
+  "fixtures": [
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_kerr",
+      "relative_error": 3.1582665972162085e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_ppt",
+      "relative_error": 3.7374491934725264e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "modeavg_real_adk",
+      "relative_error": 3.725019272390665e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_raman_sdo_thg",
+      "relative_error": 5.309145535320516e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "modeavg_real_raman_sdo_nothg",
+      "relative_error": 2.613901000682595e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_raman_rotational",
+      "relative_error": 3.0039682777032443e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_shotnoise",
+      "relative_error": 4.868698098216686e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_mixture",
+      "relative_error": 3.1677003028662676e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_zdependent",
+      "relative_error": 8.499581177986121e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_env_kerr",
+      "relative_error": 2.1125603305882498e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_env_raman_sdo",
+      "relative_error": 2.039186965654205e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_env_raman_sio2",
+      "relative_error": 7.902832940604446e-11,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_env_shotnoise",
+      "relative_error": 2.1834943655441828e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_env_mixture",
+      "relative_error": 2.0393543655244254e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_kerr",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_ppt",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "radial_real_adk",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_raman_thg",
+      "relative_error": 6.803613052124634e-18,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "radial_real_raman_nothg_rotational",
+      "relative_error": 5.851331061801403e-17,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_shotnoise",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_mixture",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_env_kerr",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_env_raman",
+      "relative_error": 3.8562821482717667e-17,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_env_shotnoise",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "radial_env_mixture",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modal_real_scalar",
+      "relative_error": 2.6586634150406802e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modal_real_vector",
+      "relative_error": 2.8047199267031836e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modal_real_full",
+      "relative_error": 3.6444945119202537e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modal_real_general_modes",
+      "relative_error": 4.547799432826723e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modal_real_raman_thg",
+      "relative_error": 3.856815984727068e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "modal_real_raman_nothg",
+      "relative_error": 5.029581962010966e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modal_real_mixture",
+      "relative_error": 2.6586634150406802e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "modal_real_tapered",
+      "relative_error": 4.3071072681290745e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "modal_real_wrappers",
+      "relative_error": 4.4931356913189895e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modal_env_scalar",
+      "relative_error": 1.8992534314597245e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modal_env_vector_full",
+      "relative_error": 1.898764159080687e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "modal_env_mixture",
+      "relative_error": 1.9097584783543202e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "modal_env_wrappers",
+      "relative_error": 2.0437922968971403e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_real_kerr",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_real_ppt",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "free_real_adk",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_real_raman_thg",
+      "relative_error": 3.660528181115637e-18,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "free_real_raman_nothg_rotational",
+      "relative_error": 7.702218930535981e-18,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_real_mixture",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_env_kerr",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "probe",
+      "fixture": "free_env_mixture",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    }
+  ],
+  "fixtures_completed": 46,
+  "fixtures_expected": 46,
+  "schema_version": 1,
+  "upstream_project": "/tmp/amalthea-upstream-0a52ffb"
+}

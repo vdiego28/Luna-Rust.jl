@@ -7,7 +7,7 @@ Deferred work and known issues for Amalthea.jl. Severity: 🔴 correctness · �
 > [`ARCHIVE.md`](ARCHIVE.md) with its section names unchanged. Cross-references
 > below to a phase, to S1/S4, or to "Done (recent)" resolve there.
 
-## Start here — current resume queue (2026-08-10)
+## Start here — current resume queue (2026-08-24)
 
 This is the authoritative short queue. The long sections below retain design
 history and measured evidence, but older words such as "next", "not started",
@@ -24,6 +24,15 @@ or "verified" inside a superseded narrative do not outrank this list.
 > is running the prepared diagnostic on a real Apple Silicon host; no Apple
 > result or LTO promotion is claimed from this x86_64 Linux machine.
 
+> **v1.0.4 candidate status — NOT RELEASED:** branch
+> `codex/cpu-apple-concurrency-optimization` carries the CPU/concurrency unit
+> and release metadata and is pushed for hosted validation. Do not tag or
+> publish it until the complete hosted matrix and real Apple quick diagnostic
+> pass. The 2026-08-24 upstream refresh also found the shared Dormand–Prince
+> fourth/fifth-order weight-label defect in Julia and every Rust backend; that
+> coordinated correction and independent order/FSAL/endpoint tests are an
+> additional release gate even if current Julia/native equivalence is green.
+
 > **Current handoff:** `v1.0.3` is published from tested commit `65489dd`.
 > Release-candidate run `31334708624` passed all 17 substantive jobs,
 > including native Linux ARM64 installation/FFI; release workflow
@@ -32,12 +41,16 @@ or "verified" inside a superseded narrative do not outrank this list.
 > the stable manual, and redundant tag test run `31383860700` passed its full
 > matrix. Post-release work advances metadata to `1.0.4-DEV` /
 > `1.0.4.dev0` and corrects public authorship, compatibility, dispatch,
-> registry, documentation-link, and benchmark claims. The repository and
-> GitHub v1.0.0 release are corrected; Zenodo v1.0.0 record `21327636` still
-> needs its owner to apply the same metadata correction because no Zenodo
-> credential is available here. The release branch and post-release audit are
-> merged into `main` at `5c9a4bd`. Standing required-CUDA CI remains
-> separately deferred by the lead.
+> registry, documentation-link, and benchmark claims. The repository, GitHub
+> v1.0.0 release, and Zenodo v1.0.0 record `21327636` are corrected; Zenodo
+> revision 6 was verified through its public API on 2026-08-11. The release
+> branch and post-release audit are merged into `main` at `5c9a4bd`. Standing
+> required-CUDA CI remains separately deferred by the lead. A separate, future
+> investigation into the
+> resident CPU backend's measured slowdown and all other eligible paths is
+> decision-complete in
+> [`native-port/PERFORMANCE_AUDIT_PLAN.md`](native-port/PERFORMANCE_AUDIT_PLAN.md);
+> it begins with frozen baselines and a benchmark matrix, not production edits.
 
 > **Release `v1.0.3` — PUBLISHED 2026-08-10:** this release expands explicit
 > CUDA support across radial, modal, and free-space geometries; includes the

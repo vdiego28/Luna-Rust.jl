@@ -4,7 +4,9 @@ All notable changes to Amalthea.jl are documented here. This project is a
 fork of [Luna.jl](https://github.com/LupoLab/Luna.jl); versions below are
 this fork's own, starting from the point the Rust backend was introduced.
 
-## [Unreleased]
+## [1.0.4]
+
+CPU performance, Apple Silicon, and concurrency update for the native backend.
 
 ### Added
 - Added AVX2 and AArch64 NEON Raman ADE recurrence kernels with scalar-tail and
@@ -31,6 +33,20 @@ this fork's own, starting from the point the Rust backend was introduced.
 - Added a reproducible, equivalence-checked Julia-oracle versus resident-native
   CPU benchmark and published its non-speedup result without extrapolating to
   other workloads or hardware.
+- Updated `CITATION.cff` to CFF 1.2.0 with complete authorship, release,
+  repository, documentation, and Zenodo metadata; corrected README citation
+  links that previously pointed to the v0.7.0 record instead of the Amalthea
+  concept DOI or current v1.0.3 record.
+- Published the historical registry, compatibility, and hardware-dispatch
+  correction on the Zenodo v1.0.0 metadata record without changing its DOI or
+  archived release files.
+
+### Fixed
+- Removed Rust stage-field clones while preserving rejected-step,
+  `locextrap=false`, dense-output, callback-window, and panic-restoration
+  semantics.
+- Corrected the Cartesian Julia `TransModal` upper-bound check to test the
+  second coordinate.
 
 ## [1.0.3]
 

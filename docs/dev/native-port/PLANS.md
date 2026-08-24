@@ -21,7 +21,7 @@ the durable rationale.
 | [2026-07-31 correctness, safety, CI, and GPU campaign](#11-2026-07-31-correctness-safety-ci-and-gpu-campaign) | Correctness, safety, CI, and first ADK slice | **Complete 2026-07-31.** Four reviewed work units landed; thresholded ADK is retained at `_GPU_ADK_N_THRESHOLD = 8193` |
 | [GPU mode-averaged SDO Raman](#12-gpu-mode-averaged-sdo-raman) | S3 broader GPU physics | **Complete 2026-08-02.** RealGrid carrier and EnvGrid envelope verified; `:SiO2` and other geometries remain out of scope |
 | [Portable installation on ARM64 and CPU-only hosts](#13-portable-installation-on-arm64-and-cpu-only-hosts) | S6 item 4 | **Complete 2026-08-10.** Native ARM64 install/FFI CI passed and v1.0.3 published the checksum-verified Linux AArch64 asset |
-| [Public claims and backend comparison benchmark](#14-public-claims-and-backend-comparison-benchmark) | Public release audit | **Repository/GitHub complete 2026-08-10; Zenodo owner edit pending.** Public claims are corrected and the equivalence-checked comparison is reproducible |
+| [Public claims and backend comparison benchmark](#14-public-claims-and-backend-comparison-benchmark) | Public release audit | **Complete 2026-08-11.** Repository, GitHub, and Zenodo claims are corrected and the equivalence-checked comparison is reproducible |
 
 ---
 
@@ -2860,8 +2860,7 @@ on this workstation's installed CUDA toolkit.
 
 ## 14. Public claims and backend comparison benchmark
 
-Status: **Repository and GitHub complete 2026-08-10; Zenodo owner edit
-pending.**
+Status: **Complete 2026-08-11.**
 
 The public README and historical v1.0.0 metadata currently overstate API
 compatibility and hardware dispatch, while the benchmark published at the
@@ -2900,11 +2899,12 @@ Julia/native ratio of 0.885x, while the final fields agreed to
 native is universally faster and gives users a script to rerun on their own
 hardware.
 
-The repository changelog and public GitHub v1.0.0 release now carry the
-historical correction. Zenodo record `21327636` permits an owner metadata
-revision, but this environment has no Zenodo access token or authenticated UI
-session. Its false General-registry phrase therefore remains an explicit
-owner action rather than being silently treated as fixed.
+The repository changelog, public GitHub v1.0.0 release, and Zenodo record
+`21327636` now carry the historical correction. The owner published the Zenodo
+metadata edit, and the public API verified revision 6 on 2026-08-11: the false
+General-registry phrase is replaced and the compatibility/dispatch correction
+notice is visible without changing the archived files or DOI.
+
 ## 15. CPU ownership, QDHT, Raman SIMD, and concurrency optimization
 
 Status: **implemented and locally validated 2026-08-24; Apple-host run pending.** This is the
@@ -3111,3 +3111,29 @@ python3 test/performance_audit/run_matrix.py --size medium \
 
 python3 test/performance_audit/run_apple_quick_test.py
 ```
+
+## 16. v1.0.4 release-candidate preparation
+
+Status: **candidate prepared 2026-08-24; hosted matrix, Apple diagnostic, and
+Dormand–Prince correction remain gates.**
+
+The CPU optimization work is collected on
+`codex/cpu-apple-concurrency-optimization`. Release metadata may advance from
+`1.0.4-DEV`/`1.0.4.dev0` to `1.0.4` on this branch so package-build and Python
+metadata match the eventual tag. Public installation examples, README
+citation text, and `CITATION.cff` continue to name the actually published
+`v1.0.3` until the release is created and its Zenodo record exists.
+
+Only compact, canonical performance JSON files are release evidence. Raw
+per-observation directories, stdout/stderr logs, and `*.field.bin` snapshots
+are regenerable local artifacts (about 20 GiB in this checkout) and are
+ignored. The audit's frozen upstream comparison remains pinned even though the
+remote was refreshed for triage.
+
+The branch can be pushed to exercise `run_tests.yml`, but no tag or GitHub
+Release is authorized. A release requires all hosted jobs green, a real Apple
+Silicon quick result, documentation/link checks, and resolution of the
+upstream DOPRI weight-vector defect recorded in `UPSTREAM_TRIAGE.md`. That
+defect must be corrected consistently in Julia, legacy Rust, resident CPU, and
+CUDA, with order/FSAL/endpoint tests that do not rely on backend equivalence
+against the same mistaken coefficients.

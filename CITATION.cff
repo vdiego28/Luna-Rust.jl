@@ -1,20 +1,29 @@
-# YAML 1.2
----
+cff-version: "1.2.0"
+message: "If you use Amalthea.jl or its Python interface, please cite this software using these metadata."
+title: "Amalthea.jl"
+type: software
+abstract: >-
+  Amalthea.jl is an ultrafast nonlinear pulse-propagation simulation package
+  derived from Luna.jl, with a resident Rust CPU backend and optional CUDA
+  acceleration.
 authors:
-  -
-    family-names: "Valenzuela Berríos"
+  - family-names: "Valenzuela Berríos"
     given-names: "Diego Andrés"
-  -
-    family-names: Brahms
-    given-names: Christian
+  - family-names: "Brahms"
+    given-names: "Christian"
     orcid: "https://orcid.org/0000-0002-8009-3547"
-  -
-    family-names: Travers
+  - family-names: "Travers"
     given-names: "John C."
     orcid: "https://orcid.org/0000-0003-0350-9104"
-cff-version: "1.1.0"
+version: "1.0.3"
+date-released: "2026-08-10"
+doi: "10.5281/zenodo.21872422"
+repository-code: "https://github.com/vdiego28/Amalthea.jl"
+url: "https://vdiego28.github.io/Amalthea.jl/stable/"
 license: MIT
-message: "If you use this Rust-accelerated software or its Python wrapper, please cite it using these metadata."
-title: "Amalthea.jl"
-doi: "10.5281/zenodo.20359893"
-...
+keywords:
+  - "Julia"
+  - "Rust"
+  - "ultrafast optics"
+  - "nonlinear optics"
+  - "pulse propagation"

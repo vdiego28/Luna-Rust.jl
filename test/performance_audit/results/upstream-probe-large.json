@@ -1,0 +1,220 @@
+{
+  "captured_at_utc": "2026-08-13T13:23:35.054015+00:00",
+  "fixtures": [
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_kerr",
+      "relative_error": 5.469547636318348e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_ppt",
+      "relative_error": 3.8072173292551383e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_adk",
+      "relative_error": 6.584113524694681e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_raman_sdo_thg",
+      "relative_error": 3.040947115871794e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_raman_sdo_nothg",
+      "relative_error": 3.191268048305592e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_raman_rotational",
+      "relative_error": 3.333869513264955e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_shotnoise",
+      "relative_error": 2.9619806071236316e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_mixture",
+      "relative_error": 3.158259248870104e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_real_zdependent",
+      "relative_error": 4.613335092774339e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_env_kerr",
+      "relative_error": 2.451770310380662e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_env_raman_sdo",
+      "relative_error": 2.484612862883209e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_env_raman_sio2",
+      "relative_error": 7.796588377966324e-14,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_env_shotnoise",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modeavg_env_mixture",
+      "relative_error": 2.479577683242952e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_kerr",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_ppt",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_adk",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_raman_thg",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_raman_nothg_rotational",
+      "relative_error": 2.61844960235274e-17,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_shotnoise",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_real_mixture",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_env_kerr",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_env_raman",
+      "relative_error": 1.8108876901836206e-17,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_env_shotnoise",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "radial_env_mixture",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modal_real_raman_thg",
+      "relative_error": 3.746684789323153e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "modal_real_raman_nothg",
+      "relative_error": 3.7911188287524917e-16,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_real_kerr",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_real_ppt",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_real_adk",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_real_raman_thg",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_real_raman_nothg_rotational",
+      "relative_error": 9.242162592891076e-18,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_real_mixture",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_env_kerr",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    },
+    {
+      "declared": "required",
+      "fixture": "free_env_mixture",
+      "relative_error": 0.0,
+      "status": "equivalent"
+    }
+  ],
+  "fixtures_completed": 35,
+  "fixtures_expected": 35,
+  "schema_version": 1,
+  "size": "large",
+  "upstream_project": "/tmp/amalthea-upstream-0a52ffb"
+}

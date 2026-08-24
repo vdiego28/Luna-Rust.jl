@@ -1,0 +1,139 @@
+{
+  "captured_at_utc": "2026-08-12T00:34:49.288610+00:00",
+  "fixtures_expected": 13,
+  "fixtures_passed": 13,
+  "results": [
+    {
+      "backend": "cpu",
+      "field_length": 257.0,
+      "fixed_solve_relative_error": 3.0651624701613387e-17,
+      "fixture": "modeavg_real_kerr",
+      "kerr_effect_relative": 0.0021142090003330788,
+      "passed": true,
+      "single_step_relative_error": 2.7205373286752486e-20,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 512.0,
+      "fixed_solve_relative_error": 6.203364631744521e-16,
+      "fixture": "modeavg_env_kerr",
+      "kerr_effect_relative": 0.0021142090003332397,
+      "passed": true,
+      "single_step_relative_error": 2.4041345654814568e-20,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 2056.0,
+      "fixed_solve_relative_error": 6.758595312083254e-20,
+      "fixture": "radial_real_kerr",
+      "kerr_effect_relative": 5.6651684792841244e-08,
+      "passed": true,
+      "single_step_relative_error": 1.5292955016174897e-18,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 514.0,
+      "fixed_solve_relative_error": 7.328298181862128e-17,
+      "fixture": "modal_real_scalar",
+      "kerr_effect_relative": 0.010834292587833418,
+      "passed": true,
+      "single_step_relative_error": 1.0996019623822368e-19,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 12336.0,
+      "fixed_solve_relative_error": 1.0203000968888532e-16,
+      "fixture": "free_real_kerr",
+      "kerr_effect_relative": 1.189225465088031e-05,
+      "passed": true,
+      "single_step_relative_error": 6.957868157847602e-20,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 257.0,
+      "fixed_solve_relative_error": 7.502560618944996e-17,
+      "fixture": "modeavg_real_mixture",
+      "kerr_effect_relative": 0.010042508582675627,
+      "passed": true,
+      "single_step_relative_error": 4.0462125264591976e-19,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 512.0,
+      "fixed_solve_relative_error": 1.9855610276774177e-18,
+      "fixture": "modeavg_env_mixture",
+      "kerr_effect_relative": 0.010042508582676033,
+      "passed": true,
+      "single_step_relative_error": 1.6751905017519831e-19,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 2056.0,
+      "fixed_solve_relative_error": 6.761258470541025e-23,
+      "fixture": "radial_real_mixture",
+      "kerr_effect_relative": 4.720579986439242e-08,
+      "passed": true,
+      "single_step_relative_error": 1.755216011771311e-24,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 4096.0,
+      "fixed_solve_relative_error": 2.9661415931392623e-16,
+      "fixture": "radial_env_mixture",
+      "kerr_effect_relative": 4.720579996638472e-08,
+      "passed": true,
+      "single_step_relative_error": 2.6006223483931146e-17,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 514.0,
+      "fixed_solve_relative_error": 7.328298181862128e-17,
+      "fixture": "modal_real_mixture",
+      "kerr_effect_relative": 0.010834292587833418,
+      "passed": true,
+      "single_step_relative_error": 1.0996019623822368e-19,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 1024.0,
+      "fixed_solve_relative_error": 4.9352971834587865e-18,
+      "fixture": "modal_env_mixture",
+      "kerr_effect_relative": 0.010834292587833718,
+      "passed": true,
+      "single_step_relative_error": 2.1292863978398072e-19,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 12336.0,
+      "fixed_solve_relative_error": 1.0203000968888532e-16,
+      "fixture": "free_real_mixture",
+      "kerr_effect_relative": 1.189225465088031e-05,
+      "passed": true,
+      "single_step_relative_error": 6.957868157847602e-20,
+      "size": "small"
+    },
+    {
+      "backend": "cpu",
+      "field_length": 24576.0,
+      "fixed_solve_relative_error": 2.463626319145745e-16,
+      "fixture": "free_env_mixture",
+      "kerr_effect_relative": 1.1892254650889865e-05,
+      "passed": true,
+      "single_step_relative_error": 3.233042154866759e-17,
+      "size": "small"
+    }
+  ],
+  "schema_version": 1,
+  "size": "small"
+}

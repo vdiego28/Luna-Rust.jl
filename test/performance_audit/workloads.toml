@@ -1,0 +1,562 @@
+schema_version = 1
+source_of_truth = "src/RK45.jl RustNativeStepper NativeIneligible guards at Amalthea 73e32dcf45d93f11136d419faeae3b3641c9577d"
+upstream_commit = "0a52ffbba6d5dd6820bb3dc3c300b8b38d724214"
+size_policy = "Small exposes fixed overhead, medium is representative, large stresses throughput. Requested construction parameters are frozen below; realized FFT/grid and field dimensions for all 147 cells are frozen in results/fixture-shapes.jsonl."
+realized_shape_inventory = "results/fixture-shapes.jsonl"
+
+[measurement]
+process_isolation = true
+warmups = 2
+minimum_samples = 10
+maximum_samples = 30
+relative_mad_target = 0.03
+bootstrap_ci_half_width_target = 0.05
+primary_threads = [1]
+threaded_geometry_threads = [1, 2, 4, 6]
+timings = ["setup", "field_sync", "fixed_rhs", "fixed_step", "adaptive_solve", "dense_output", "result_copy"]
+counters = ["allocations", "peak_rss", "cycles", "instructions", "cache_misses", "branch_misses"]
+
+# `upstream`: required = known public equivalent; probe = API/semantic parity
+# must be established by the fixture checkpoint; unavailable = fork-only.
+
+[[fixture]]
+id = "modeavg_real_kerr"
+geometry = "modeavg"
+grid = "real"
+features = ["kerr", "thg_true"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_phase1.jl"
+guard_basis = "RK45.jl mode-averaged plain-Kerr response branch"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_real_ppt"
+geometry = "modeavg"
+grid = "real"
+features = ["kerr", "ppt"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_phase2.jl"
+guard_basis = "native_set_plasma_params with IonRatePPTAccel"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_real_adk"
+geometry = "modeavg"
+grid = "real"
+features = ["kerr", "adk"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_adk_ionisation.jl"
+guard_basis = "native_set_plasma_params_adk with IonRateADK"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_real_raman_sdo_thg"
+geometry = "modeavg"
+grid = "real"
+features = ["kerr", "raman_sdo", "thg_true"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_raman.jl"
+guard_basis = "RamanPolarField flattened SDO setter, thg=true"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_real_raman_sdo_nothg"
+geometry = "modeavg"
+grid = "real"
+features = ["kerr", "raman_sdo", "thg_false"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_raman_nothg.jl"
+guard_basis = "RamanPolarField flattened SDO setter, thg=false Hilbert branch"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_real_raman_rotational"
+geometry = "modeavg"
+grid = "real"
+features = ["kerr", "raman_sdo", "raman_rotational", "thg_true"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_raman_env_rotational.jl"
+guard_basis = "flatten_sdo_oscillators multi-oscillator branch"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_real_shotnoise"
+geometry = "modeavg"
+grid = "real"
+features = ["kerr", "shotnoise"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_shotnoise.jl"
+guard_basis = "native_set_mode_avg_noise RealGrid branch"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_real_mixture"
+geometry = "modeavg"
+grid = "real"
+features = ["kerr", "mixture"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_mixture.jl"
+guard_basis = "mode-averaged per-species plain-Kerr collapse"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_real_zdependent"
+geometry = "modeavg"
+grid = "real"
+features = ["kerr", "z_dependent"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_zdep_linop.jl; test/test_native_multipoint_gradient.jl"
+guard_basis = "ZDepLinopMarcatili resident density/beta1 update"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_env_kerr"
+geometry = "modeavg"
+grid = "env"
+features = ["kerr", "thg_false"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_phase2.jl"
+guard_basis = "mode-averaged EnvGrid c2c plain-Kerr branch"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_env_ppt"
+geometry = "modeavg"
+grid = "env"
+features = ["kerr", "ppt"]
+upstream = "unavailable"
+audit_gate = "failed: manually constructed EnvGrid plasma reaches the CPU-native guard, but the retained Julia PlasmaScalar! oracle throws InexactError on the complex field; public Interface does not expose this shape"
+threaded = false
+oracle_test = "test/test_native_gpu_dispatch.jl"
+guard_basis = "mode-averaged EnvGrid plus native_set_plasma_params"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_env_adk"
+geometry = "modeavg"
+grid = "env"
+features = ["kerr", "adk"]
+upstream = "unavailable"
+audit_gate = "failed: same invalid EnvGrid plasma oracle/API shape as PPT"
+threaded = false
+oracle_test = "test/test_native_gpu_dispatch.jl; test/test_native_adk_ionisation.jl"
+guard_basis = "mode-averaged EnvGrid plus native_set_plasma_params_adk"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_env_raman_sdo"
+geometry = "modeavg"
+grid = "env"
+features = ["kerr", "raman_sdo"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_raman_env_rotational.jl"
+guard_basis = "RamanPolarEnv resident ADE branch"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_env_raman_sio2"
+geometry = "modeavg"
+grid = "env"
+features = ["kerr", "raman_sio2"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_raman_sio2.jl"
+guard_basis = "native_set_raman_fft_params intermediate-broadening branch"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_env_shotnoise"
+geometry = "modeavg"
+grid = "env"
+features = ["kerr", "shotnoise"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_envgrid_shotnoise.jl"
+guard_basis = "native_set_mode_avg_noise_cplx EnvGrid branch"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "modeavg_env_mixture"
+geometry = "modeavg"
+grid = "env"
+features = ["kerr", "mixture"]
+upstream = "required"
+threaded = false
+oracle_test = "test/test_native_mixture.jl"
+guard_basis = "mode-averaged per-species plain-Kerr collapse on EnvGrid"
+sizes = { small = "Nt=512", medium = "Nt=2048", large = "Nt=8192" }
+
+[[fixture]]
+id = "radial_real_kerr"
+geometry = "radial"
+grid = "real"
+features = ["kerr"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_radial.jl"
+guard_basis = "TransRadial RealGrid resident QDHT branch"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "radial_real_ppt"
+geometry = "radial"
+grid = "real"
+features = ["kerr", "ppt"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_radial_plasma.jl"
+guard_basis = "TransRadial column plasma with PPT"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "radial_real_adk"
+geometry = "radial"
+grid = "real"
+features = ["kerr", "adk"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_cuda_radial_adk.jl"
+guard_basis = "TransRadial column plasma with ADK"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "radial_real_raman_thg"
+geometry = "radial"
+grid = "real"
+features = ["kerr", "raman_sdo", "thg_true"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_radial_raman.jl"
+guard_basis = "TransRadial per-column RamanPolarField, thg=true"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "radial_real_raman_nothg_rotational"
+geometry = "radial"
+grid = "real"
+features = ["kerr", "raman_sdo", "raman_rotational", "thg_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_radial_raman.jl"
+guard_basis = "TransRadial per-column multi-SDO Hilbert branch"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "radial_real_shotnoise"
+geometry = "radial"
+grid = "real"
+features = ["kerr", "shotnoise"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_radial_shotnoise.jl"
+guard_basis = "native_set_radial_noise RealGrid branch"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "radial_real_mixture"
+geometry = "radial"
+grid = "real"
+features = ["kerr", "mixture"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_radial_mixture.jl"
+guard_basis = "radial per-species plain-Kerr collapse"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "radial_env_kerr"
+geometry = "radial"
+grid = "env"
+features = ["kerr"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_radial_env.jl"
+guard_basis = "TransRadial EnvGrid c2c plus resident QDHT"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "radial_env_raman"
+geometry = "radial"
+grid = "env"
+features = ["kerr", "raman_sdo"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_radial_env_raman.jl"
+guard_basis = "TransRadial RamanPolarEnv branch"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "radial_env_shotnoise"
+geometry = "radial"
+grid = "env"
+features = ["kerr", "shotnoise"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_radial_shotnoise.jl"
+guard_basis = "native_set_radial_noise_cplx EnvGrid branch"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "radial_env_mixture"
+geometry = "radial"
+grid = "env"
+features = ["kerr", "mixture"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_radial_mixture.jl"
+guard_basis = "radial mixture branch is grid-independent in current guard code"
+sizes = { small = "Nt=256,Nr=8", medium = "Nt=1024,Nr=24", large = "Nt=4096,Nr=48" }
+
+[[fixture]]
+id = "modal_real_scalar"
+geometry = "modal"
+grid = "real"
+features = ["kerr", "npol_1", "full_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal.jl"
+guard_basis = "TransModal pcubature scalar branch"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_real_vector"
+geometry = "modal"
+grid = "real"
+features = ["kerr", "npol_2", "full_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_npol2.jl"
+guard_basis = "TransModal npol=2 KerrVector branch"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_real_full"
+geometry = "modal"
+grid = "real"
+features = ["kerr", "npol_1", "full_true"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_full.jl"
+guard_basis = "TransModal hcubature full=true branch"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_real_general_modes"
+geometry = "modal"
+grid = "real"
+features = ["kerr", "npol_1", "full_false", "general_mode_orders"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_general_order.jl"
+guard_basis = "Marcatili HE/TE/TM and general-order Bessel synthesis"
+sizes = { small = "Nt=256,Nm=3", medium = "Nt=1024,Nm=6", large = "Nt=4096,Nm=9" }
+
+[[fixture]]
+id = "modal_real_raman_thg"
+geometry = "modal"
+grid = "real"
+features = ["kerr", "raman_sdo", "thg_true", "npol_1", "full_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_raman.jl"
+guard_basis = "TransModal callback-batch SDO Raman, thg=true"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_real_raman_nothg"
+geometry = "modal"
+grid = "real"
+features = ["kerr", "raman_sdo", "thg_false", "npol_1", "full_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_raman.jl"
+guard_basis = "TransModal callback-batch SDO Raman Hilbert branch"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_real_mixture"
+geometry = "modal"
+grid = "real"
+features = ["kerr", "mixture", "npol_1", "full_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_mixture.jl"
+guard_basis = "modal per-species plain-Kerr collapse"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_real_tapered"
+geometry = "modal"
+grid = "real"
+features = ["kerr", "z_dependent", "npol_1", "full_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_taper.jl"
+guard_basis = "ZDepLinopModalTaper radius and normalization update"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_real_wrappers"
+geometry = "modal"
+grid = "real"
+features = ["kerr", "wrapper_modes", "npol_1", "full_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_zv.jl"
+guard_basis = "ZeisbergerMode/VincettiMode unwrapping to inner Marcatili fields"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_env_scalar"
+geometry = "modal"
+grid = "env"
+features = ["kerr", "npol_1", "full_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_env.jl"
+guard_basis = "TransModal EnvGrid pcubature scalar branch"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_env_vector_full"
+geometry = "modal"
+grid = "env"
+features = ["kerr", "npol_2", "full_true"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_env.jl"
+guard_basis = "TransModal EnvGrid hcubature vector branch"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_env_mixture"
+geometry = "modal"
+grid = "env"
+features = ["kerr", "mixture", "npol_1", "full_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_mixture.jl"
+guard_basis = "modal mixture branch is grid-independent in current guard code"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "modal_env_wrappers"
+geometry = "modal"
+grid = "env"
+features = ["kerr", "wrapper_modes", "npol_1", "full_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_modal_zv.jl"
+guard_basis = "EnvGrid ZeisbergerMode/VincettiMode inner-field unwrapping"
+sizes = { small = "Nt=256,Nm=2", medium = "Nt=1024,Nm=4", large = "Nt=4096,Nm=8" }
+
+[[fixture]]
+id = "free_real_kerr"
+geometry = "free"
+grid = "real"
+features = ["kerr"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_free.jl"
+guard_basis = "TransFree RealGrid joint 3-D r2c/c2r branch"
+sizes = { small = "Nt=128,Ny=8,Nx=6", medium = "Nt=512,Ny=20,Nx=16", large = "Nt=2048,Ny=40,Nx=32" }
+
+[[fixture]]
+id = "free_real_ppt"
+geometry = "free"
+grid = "real"
+features = ["kerr", "ppt"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_free_plasma.jl"
+guard_basis = "TransFree per-column PPT plasma branch"
+sizes = { small = "Nt=128,Ny=8,Nx=6", medium = "Nt=512,Ny=20,Nx=16", large = "Nt=2048,Ny=40,Nx=32" }
+
+[[fixture]]
+id = "free_real_adk"
+geometry = "free"
+grid = "real"
+features = ["kerr", "adk"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_cuda_free_adk.jl"
+guard_basis = "TransFree per-column ADK plasma branch"
+sizes = { small = "Nt=128,Ny=8,Nx=6", medium = "Nt=512,Ny=20,Nx=16", large = "Nt=2048,Ny=40,Nx=32" }
+
+[[fixture]]
+id = "free_real_raman_thg"
+geometry = "free"
+grid = "real"
+features = ["kerr", "raman_sdo", "thg_true"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_free_raman.jl"
+guard_basis = "TransFree per-column RamanPolarField branch, thg=true"
+sizes = { small = "Nt=128,Ny=8,Nx=6", medium = "Nt=512,Ny=20,Nx=16", large = "Nt=2048,Ny=40,Nx=32" }
+
+[[fixture]]
+id = "free_real_raman_nothg_rotational"
+geometry = "free"
+grid = "real"
+features = ["kerr", "raman_sdo", "raman_rotational", "thg_false"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_free_raman.jl"
+guard_basis = "TransFree per-column multi-SDO Hilbert branch"
+sizes = { small = "Nt=128,Ny=8,Nx=6", medium = "Nt=512,Ny=20,Nx=16", large = "Nt=2048,Ny=40,Nx=32" }
+
+[[fixture]]
+id = "free_real_mixture"
+geometry = "free"
+grid = "real"
+features = ["kerr", "mixture"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_free_mixture.jl"
+guard_basis = "free-space per-species plain-Kerr collapse"
+sizes = { small = "Nt=128,Ny=8,Nx=6", medium = "Nt=512,Ny=20,Nx=16", large = "Nt=2048,Ny=40,Nx=32" }
+
+[[fixture]]
+id = "free_real_zdependent"
+geometry = "free"
+grid = "real"
+features = ["kerr", "z_dependent"]
+upstream = "unavailable"
+audit_gate = "Pinned upstream Luna lacks LinearOps.make_linop_free_gradient; fork-only z-dependent free-space linear operator."
+threaded = true
+oracle_test = "test/test_native_free_zdep.jl"
+guard_basis = "ZDepNormFree plus ZDepLinopFree resident updates"
+sizes = { small = "Nt=128,Ny=8,Nx=6", medium = "Nt=512,Ny=20,Nx=16", large = "Nt=2048,Ny=40,Nx=32" }
+
+[[fixture]]
+id = "free_env_kerr"
+geometry = "free"
+grid = "env"
+features = ["kerr"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_free_env.jl"
+guard_basis = "TransFree EnvGrid joint 3-D c2c branch"
+sizes = { small = "Nt=128,Ny=8,Nx=6", medium = "Nt=512,Ny=20,Nx=16", large = "Nt=2048,Ny=40,Nx=32" }
+
+[[fixture]]
+id = "free_env_mixture"
+geometry = "free"
+grid = "env"
+features = ["kerr", "mixture"]
+upstream = "required"
+threaded = true
+oracle_test = "test/test_native_free_mixture.jl"
+guard_basis = "free-space mixture branch explicitly handles either grid"
+sizes = { small = "Nt=128,Ny=8,Nx=6", medium = "Nt=512,Ny=20,Nx=16", large = "Nt=2048,Ny=40,Nx=32" }

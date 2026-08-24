@@ -8,6 +8,35 @@ implement every upstream change. A candidate becomes live work only after its
 design is recorded in [`PLANS.md`](PLANS.md) and promoted in
 [`BACKLOG.md`](../BACKLOG.md).
 
+## 2026-08-24 upstream refresh and v1.0.4 gate
+
+Upstream `master` was fetched through commit `08a53b3` after the CPU work was
+implemented. The frozen performance-audit comparison remains pinned to
+`0a52ffb`; changing that baseline would invalidate its recorded measurements.
+
+- `7747c93` fixes deferred FSAL and dense-output state. Amalthea already has an
+  independently implemented version with stronger resident/legacy coverage.
+- `1d7e4c3` proves that the Dormand–Prince weight vectors were named backwards
+  and that default `locextrap=true` propagates the embedded fourth-order state.
+  Amalthea's Julia, legacy Rust, resident CPU, and CUDA steppers all share that
+  historical convention, so mutual equivalence cannot detect it. This is a
+  correctness gate for `v1.0.4`: it requires one coordinated, design-first
+  change plus exact order, FSAL, endpoint, rejection, dense-output, and
+  cross-backend tests. It is not folded into the CPU optimization commit.
+- `32a6701` corrects the analogous Tsitouras tableau, but Amalthea's active
+  RK45 module includes `dopri.jl`, not `tsit.jl`; it is recorded rather than
+  treated as a release blocker.
+- `08a53b3` adds `spectral_phase` with a deprecated `getφ` alias. The naming
+  improvement is suitable for a separate compatibility change; its associated
+  `DataField(...; λ0=...)` fix was already present locally.
+- Open PR #438 adds rate-based absorbing boundaries. It remains a candidate
+  until its upstream documentation job is green and a resident-native design
+  defines callback/state ownership.
+
+The release-candidate branch may run hosted tests while the DOPRI item is
+resolved, but it must not be tagged or published merely because the shared-bug
+Julia/native equivalence suite is green.
+
 ## Highest-value candidates
 
 ### 1. Make `Scan` safe in IJulia — issue [#317](https://github.com/LupoLab/Luna.jl/issues/317)

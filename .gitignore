@@ -36,6 +36,14 @@ htmlcov/
 # Generated CI benchmark output (test/benchmark_native_default.jl)
 test/benchmark_result.json
 
+# Performance-audit runs retain compact canonical JSON summaries at the root.
+# Per-observation directories contain regenerable logs and field snapshots that
+# can reach tens of gigabytes and must never enter release history.
+test/performance_audit/results/*/
+test/performance_audit/results/*.field.bin
+test/performance_audit/results/*.stdout.log
+test/performance_audit/results/*.stderr.log
+
 # Per-worker logs from test/parallel_rust_tests.py
 .rust_test_logs/
 
