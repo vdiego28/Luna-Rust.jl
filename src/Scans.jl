@@ -6,8 +6,9 @@ import Base: length, size
 import Amalthea: Utils
 import FileWatching.Pidfile: mkpidlock
 import HDF5
-import Distributed: @spawnat, addprocs, rmprocs, fetch, Future, @everywhere
+import Distributed: @spawnat, addprocs, rmprocs, fetch, remotecall_fetch
 import Dates
+import SHA
 
 """
     AbstractExec
@@ -45,7 +46,7 @@ end
 
 
 """
-    QueueExec(nproc=0, queuefile="")
+    QueueExec(nproc=0, queuefile=""; threads_per_worker=1)
 
 Execution mode to run a scan using a file-based queueing system. Can be run in multiple separate
 Julia sessions, or can spawn `nproc` subprocesses which then take items from the queue to run.
@@ -57,14 +58,24 @@ Possible values for `nproc` are:
     (`Base.Sys.CPU_THREADS`)
 
 If `queuefile` is given, the queuefile is stored at that path. If omitted, the queuefile is 
-stored in `Utils.cachedir()`. Note that the queuefile is deleted at the end of the scan.
+stored under `Utils.cachedir()` using a stable digest of the scan name. Note that the
+queuefile is deleted at the end of the scan. `threads_per_worker` controls Julia, FFTW,
+and resident-Rayon concurrency inside each spawned worker; its default of one avoids
+process × thread oversubscription.
 """
 struct QueueExec <: AbstractExec
     nproc::Int
     queuefile::String
+    threads_per_worker::Int
 end
 
-QueueExec(nproc=0) = QueueExec(nproc, "")
+function QueueExec(; nproc=0, queuefile="", threads_per_worker=1)
+    threads_per_worker >= 1 || throw(ArgumentError("threads_per_worker must be positive"))
+    QueueExec(Int(nproc), String(queuefile), Int(threads_per_worker))
+end
+QueueExec(nproc::Integer) = QueueExec(; nproc)
+QueueExec(nproc::Integer, queuefile::AbstractString; threads_per_worker=1) =
+    QueueExec(; nproc, queuefile, threads_per_worker)
 
 """
     CondorExec(scriptfile, ncores)
@@ -364,25 +375,38 @@ function runscan(f, scan::Scan{QueueExec})
     if scan.exec.nproc == 0
         _runscan(f, scan)
     else
-        nproc = (scan.exec.nproc == -1) ? Base.Sys.CPU_THREADS : scan.exec.nproc
-        procs = addprocs(nproc)
-        @everywhere eval(:(using Amalthea))
-        futures = Future[]
-        for p in procs
-            fut = @spawnat p _runscan(f, scan)
-            push!(futures, fut)
+        nproc = if scan.exec.nproc == -1
+            max(1, fld(Base.Sys.CPU_THREADS, scan.exec.threads_per_worker))
+        else
+            scan.exec.nproc
         end
-        for fut in futures
-            fetch(fut)
+        procs = addprocs(nproc; exeflags="--threads=$(scan.exec.threads_per_worker)")
+        try
+            threads_per_worker = scan.exec.threads_per_worker
+            setup_expr = quote
+                using Amalthea
+                import FFTW
+                Amalthea.settings["fftw_threads"] = $threads_per_worker
+                FFTW.set_num_threads($threads_per_worker)
+                nothing
+            end
+            for p in procs
+                remotecall_fetch(Core.eval, p, Main, setup_expr)
+            end
+            futures = [@spawnat p _runscan(f, scan) for p in procs]
+            fetch.(futures)
+        finally
+            rmprocs(procs)
         end
-        rmprocs(procs)
     end
 end
 
 function _runscan(f, scan::Scan{QueueExec})
     if isempty(scan.exec.queuefile)
-        h = string(hash(scan.name); base=16)
-        qfile = "qfile_$h.h5"
+        qdir = Utils.cachedir()
+        isdir(qdir) || mkpath(qdir)
+        digest = bytes2hex(SHA.sha256(scan.name))[1:16]
+        qfile = joinpath(qdir, "qfile_$digest.h5")
     else
         qfile = scan.exec.queuefile
     end
@@ -391,6 +415,8 @@ function _runscan(f, scan::Scan{QueueExec})
     combos = vec(collect(Iterators.product(scan.arrays...)))
     qfile_created = false
     while true
+        scanidx = nothing
+        qdata = fill(2, length(scan))
         mkpidlock(lockpath; stale_age=120) do
             # first process to catch the pidlock creates the queue file
             if ~isfile(qfile)
@@ -398,8 +424,8 @@ function _runscan(f, scan::Scan{QueueExec})
                     # The queue file was already created, so another process
                     # must have completed the scan and removed it. Signal
                     # that we should stop by setting scanidx to nothing.
-                    global scanidx = nothing
-                    global qdata = fill(2, length(scan))
+                    scanidx = nothing
+                    qdata = fill(2, length(scan))
                     return
                 end
                 HDF5.h5open(qfile, "cw") do file
@@ -408,11 +434,11 @@ function _runscan(f, scan::Scan{QueueExec})
             end
             qfile_created = true
             # read the queue data
-            global qdata = HDF5.h5open(qfile) do file
+            qdata = HDF5.h5open(qfile) do file
                 read(file["qdata"])
             end
             # find the first index which is neither done nor in progress
-            global scanidx = findfirst(qdata) do qi
+            scanidx = findfirst(qdata) do qi
                 qi == 0
             end
             if ~isnothing(scanidx)

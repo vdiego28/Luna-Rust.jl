@@ -70,8 +70,15 @@ The `amalthea` crate provides the high-performance numerical engine that powers 
   mode-averaged RealGrid Kerr/PPT scope, and not yet covered by standing GPU
   CI. `dispatch.rs` detects hardware for its own tests but is not a
   propagation dispatcher, and there is no Vulkan implementation.
-- **Parallelised transforms**: the quasi-discrete Hankel transform (QDHT) used in free-space propagation is parallelised with [Rayon](https://github.com/rayon-rs/rayon).
-- **Raman solver**: the time-domain Raman solver uses an explicit matrix-exponential integrator, with an AVX2 fast path on `x86_64` and portable code on ARM64 and other CPUs.
+- **Parallelised transforms**: resident radial QDHT automatically uses Julia's
+  configured BLAS provider for production-sized batches, with a Rayon fallback
+  for small or deterministic work.
+- **Raman solver**: the time-domain matrix-exponential recurrence has real
+  AVX2 (`x86_64`) and NEON (Apple/Linux AArch64) kernels plus a scalar portable
+  fallback; oscillator accumulation order is preserved.
+- **Controlled concurrency**: standard Julia `TransModal` responses use
+  scratch-isolated callback batching, while process-parallel scans default to
+  one Julia/Rayon/FFTW thread per worker to avoid oversubscription.
 - **Cross-platform**: builds and runs on Linux, macOS, and Windows, including
   Linux ARM64 and Apple Silicon. CUDA is optional; ordinary installations use
   the resident CPU backend and do not need an NVIDIA GPU or CUDA toolkit. The
@@ -169,6 +176,20 @@ using Amalthea
 See the complete [installation and configuration guide](docs/src/installation.md)
 for Linux, macOS, Windows, ARM, source prerequisites, CPU/CUDA switching,
 environment-variable syntax, updating, verification, and troubleshooting.
+
+On Apple Silicon, leave `AMALTHEA_QDHT_BLAS=auto` so radial simulations use
+Julia's configured provider (including Accelerate when Julia is configured for
+it). Use process-parallel scans with the default `threads_per_worker=1`, then
+run the 5–10 minute Apple diagnostic before tuning process/thread topology:
+
+```bash
+python3 test/performance_audit/run_apple_quick_test.py
+```
+
+It records the M-chip topology, Julia/Rust/FFTW/BLAS providers, 1/2/4-thread
+results, modal and scan correctness, and a portable-versus-host-native thin-LTO
+diagnostic. The normal portable library is restored even if the diagnostic
+fails. Thin LTO is not enabled in production by this runner.
 
 ## Quickstart
 

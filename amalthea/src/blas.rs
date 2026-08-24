@@ -199,5 +199,6 @@ pub fn get_blas_api() -> Result<&'static BlasApi, String> {
 // used in production (`NonlinearRHS._init_rust_qdht_blas` dlopens the
 // *already-loaded* `libblastrampoline` via `Libdl.dlpath(Libdl.dlopen(...))`
 // from within Julia, reusing its live, configured instance). The real gate
-// is `test/test_qdht_rust.jl` run with `AMALTHEA_USE_RUST_QDHT=1
-// AMALTHEA_QDHT_BLAS=1` (see docs/dev/BACKLOG.md S1 item 5).
+// is `test/test_qdht_rust.jl` plus the resident radial policy coverage in
+// `test/test_native_deterministic.jl`, run from Julia with its configured
+// BLAS provider active.

@@ -27,7 +27,11 @@ pub struct QdhtFfiHandle {
     /// Rayon fallback instead — see `native::NativeBackend::set_deterministic`'s
     /// doc for why.
     deterministic: bool,
+    /// 0 = always Rayon, 1 = automatic threshold, 2 = force configured BLAS.
+    blas_mode: u8,
 }
+
+const QDHT_BLAS_AUTO_WORK: usize = 4096;
 
 impl QdhtFfiHandle {
     /// Construct from Julia's column-major T matrix and scale factors.
@@ -56,11 +60,29 @@ impl QdhtFfiHandle {
             scratch,
             capacity,
             deterministic: false,
+            blas_mode: 1,
         }
     }
 
     pub fn set_deterministic(&mut self, on: bool) {
         self.deterministic = on;
+    }
+
+    pub fn set_blas_mode(&mut self, mode: u8) -> bool {
+        if mode > 2 {
+            return false;
+        }
+        self.blas_mode = mode;
+        true
+    }
+
+    #[inline]
+    fn use_blas(&self, n_time: usize) -> bool {
+        !self.deterministic
+            && (self.blas_mode == 2
+                || (self.blas_mode == 1
+                    && n_time.saturating_mul(self.n_r).saturating_mul(self.n_r)
+                        >= QDHT_BLAS_AUTO_WORK))
     }
 
     fn ensure_capacity(&mut self, n_time: usize) {
@@ -80,7 +102,7 @@ impl QdhtFfiHandle {
         let block = n_r * n_time;
         self.ensure_capacity(n_time);
 
-        if !self.deterministic
+        if self.use_blas(n_time)
             && let Ok(api) = crate::blas::get_blas_api()
         {
             // Use BLAS-3 dgemm directly on the col-major array
@@ -145,7 +167,7 @@ impl QdhtFfiHandle {
         let block2 = 2 * n_r * n_time; // total f64 elements
         self.ensure_capacity(n_time);
 
-        if !self.deterministic
+        if self.use_blas(n_time)
             && let Ok(api) = crate::blas::get_blas_api()
         {
             // Use BLAS-3 dgemm directly on the col-major complex array
@@ -271,8 +293,8 @@ pub unsafe extern "C" fn free_qdht_ffi(ptr: *mut QdhtFfiHandle) {
 /// `native_set_deterministic`, which covers the resident native-port
 /// radial geometry's own `QdhtFfiHandle` — this one covers the older
 /// per-kernel wiring path (`NonlinearRHS._make_rust_qdht_handle`), the
-/// only call site that ever populates the process-global `BLAS_API`
-/// (`NonlinearRHS._init_rust_qdht_blas`).
+/// legacy per-kernel wiring path. Resident radial construction initializes
+/// the same process-global BLAS table directly.
 ///
 /// # Safety
 /// `ptr` must be a valid, non-null pointer from [`init_qdht_ffi`].
@@ -284,6 +306,17 @@ pub unsafe extern "C" fn qdht_ffi_set_deterministic(ptr: *mut QdhtFfiHandle, on:
     let h = unsafe { &mut *ptr };
     h.set_deterministic(on != 0);
     0
+}
+
+/// Select QDHT execution: `0` forces Rayon, `1` chooses BLAS above the
+/// measured workload threshold, and `2` forces configured BLAS when loaded.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn qdht_ffi_set_blas_mode(ptr: *mut QdhtFfiHandle, mode: c_int) -> i32 {
+    if ptr.is_null() || !(0..=2).contains(&mode) {
+        return -1;
+    }
+    let h = unsafe { &mut *ptr };
+    if h.set_blas_mode(mode as u8) { 0 } else { -1 }
 }
 
 /// Batch forward Hankel transform (`mul!`) for a real-valued Julia array.

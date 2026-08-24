@@ -4262,3 +4262,180 @@ and benchmark changes passed their focused local validation before merge.
 **Next:** The live queue is standing required-CUDA CI, still deliberately
 deferred by the lead. Separately, the Zenodo owner should apply the one-line
 v1.0.0 General-registry metadata correction recorded above.
+## 2026-08-24 — CPU optimization and concurrency — Native ownership, QDHT BLAS, Raman SIMD, modal/scans — Codex (GPT-5)
+**Status:** complete on the available x86_64 Linux host; Apple-host execution
+is the documented follow-up.
+
+**Did:** Implemented the three evidence-backed native CPU optimizations from
+`PLANS.md` §15: reusable RK stage ownership with no routine Julia field
+resynchronization for the exact no-op callback, automatic resident QDHT BLAS-3
+dispatch, and true AVX2/AArch64-NEON Raman ADE kernels over structure-of-arrays
+state. Separately made the recognized Julia `TransModal` fallback safely
+threaded, made `QueueExec` state local and cleanup exception-safe with explicit
+per-worker thread control, added the Apple quick-test runner, and updated the
+user/developer documentation. No release-profile LTO flag was changed and no
+commit or push was made.
+
+**How:**
+
+- `src/RK45.jl:190,1850,1942,2563` skips `native_resync_field` only when
+  `stepfun === donothing!`, initializes Julia's configured BLAS during resident
+  radial construction, forwards `native_set_qdht_blas_mode`, and reuses the
+  existing `RustNativeStepper.y` attempt-start buffer instead of allocating
+  `copy(s.yn)`.
+- `amalthea/src/native.rs:2724-2803,3690,5032-5087` routes stages through
+  `dispatch_rhs`, `eval_stage_from_ystage`, and `eval_field_stage_zero`.
+  `mem::take` gives the RHS safe temporary ownership without cloning; unwind
+  handling restores the field before resuming the panic. The non-local-
+  extrapolation final stage is copied before propagation so rejected-step,
+  interpolation, and `locextrap=false` semantics remain unchanged.
+- `amalthea/src/ffi.rs:314` adds `qdht_ffi_set_blas_mode`; the resident ABI is
+  `native_set_qdht_blas_mode` at `amalthea/src/native.rs:5604`. Mode 0 is
+  explicit Rayon, mode 1 automatic, and mode 2 forced configured BLAS.
+  Automatic mode uses batched `dgemm` at
+  `n_time*n_r*n_r >= 4096` multiply-accumulates, otherwise Rayon;
+  deterministic mode always uses Rayon. `src/Config.jl` accepts `off/0`, `on/1`, and
+  `auto/default` with automatic as the default. `src/NonlinearRHS.jl:39-80`
+  initializes libblastrampoline independently of the legacy QDHT handle and
+  applies the same policy to that handle.
+- `amalthea/src/raman.rs:100-360` stores the eight ADE coefficient streams and
+  oscillator state as SoA, retains the packed coefficient copy required by the
+  CUDA ABI, dispatches AVX2 at runtime on x86_64, and compiles an AArch64 NEON
+  kernel. Both kernels have scalar tails, avoid FMA reassociation, and sum total
+  polarization in the original oscillator order; the scalar kernel remains the
+  oracle/fallback.
+- `src/NonlinearRHS.jl:284-450,590` defines `ModalScratch`, constructs one full
+  mutable `ToSpace`/FFT/response workspace per scheduled Julia task, and writes
+  only disjoint Cubature output columns. Plain Kerr and cloneable standard
+  Julia plasma/Raman responses may thread; arbitrary/stateful closures and
+  legacy Rust response handles deliberately remain sequential. The same work
+  also corrected the sequential Cartesian upper-bound check to use `upper[2]`.
+- `src/Scans.jl:49-78,360-407` adds backward-compatible
+  `threads_per_worker=1`, a stable SHA-256 queue name in `Utils.cachedir()`,
+  closure-local queue state, remote Julia/FFTW thread setup, fetched worker
+  tasks, and `try/finally` removal of every process created by the call.
+- `test/performance_audit/run_apple_quick_test.py` and
+  `apple_quick_aux.jl` provide one JSON/Markdown runner for M-chip topology,
+  tool/runtime libraries, configured BLAS, thread environment, rotational
+  Raman, radial QDHT, exact modal threading, and a two-worker exact-once scan.
+  It compares 1/2/4 native threads and a portable build against one diagnostic
+  host-native/thin-LTO/one-codegen-unit build, verifies fields within `1e-6`,
+  and restores the portable artifact in `finally`.
+- Added focused regression tests in `test/test_transmodal_julia_threading.jl`
+  and `test/test_queueexec_concurrency.jl`; expanded backend/QDHT,
+  deterministic, scan, Rust QDHT, and Rust Raman tests. Updated README,
+  CHANGELOG, installation/scans docs, architecture, math, testing, support
+  matrix, plans, backlog/archive/status notes, audit reports, and harness docs.
+
+**Decisions:**
+
+- Preserve numerical order where it is part of the oracle: SIMD advances
+  independent oscillators in lanes but the polarization reduction stays
+  scalar and ordered. Do not use approximate math or FMA.
+- Make QDHT `auto` the normal policy, not unconditional BLAS. The measured
+  crossover is encoded as a workload threshold; explicit `on` means BLAS even
+  below it, explicit `off` means Rayon, and deterministic overrides either to
+  Rayon. Initialize the provider configured by Julia so macOS respects
+  Accelerate only when Julia is actually configured for it.
+- Thread `TransModal` by cloned recognized response families, not by assuming
+  user callbacks are thread-safe. Per-task scratch and disjoint columns avoid
+  both the former shared-scratch race and task migration/thread-ID coupling.
+- Keep process-parallel scans as the independent-simulation mechanism. Default
+  each worker to one Julia/FFTW thread and expose topology rather than silently
+  multiplying processes, Julia threads, FFTW threads, and native Rayon workers.
+- Do not promote thin LTO from a diagnostic runner. The frozen policy requires
+  at least 5% on both the local end-to-end workloads and a real Apple run with
+  correctness/portability gates; Apple evidence is not available on this host.
+
+**Gotchas:**
+
+- Moving the stage buffer exposed one `locextrap=false` dependency on the
+  unpropagated final `ystage`; copying that stage into `yn_sl` before RHS
+  dispatch is required. The initial focused run caught this with two failures;
+  the corrected phase-1 lifecycle suite is green.
+- Loading BLAS symbols in Rust alone is insufficient: libblastrampoline must
+  first be initialized from Julia, and resident radial construction cannot rely
+  on the opt-in legacy QDHT handle to do that.
+- Local distributed scan tests need host loopback sockets; sandbox execution
+  fails for environmental reasons, so the scan gate was run with approved
+  escalated execution.
+- Hardware counters are unavailable on this machine even outside the sandbox
+  (`perf_event_paranoid=4`, no `CAP_PERFMON`). The allocation and end-to-end
+  timing evidence therefore governs acceptance.
+- The AArch64 cross-check compiles the NEON code, but this repository's local
+  `.cargo/config.toml` x86 `target-cpu=znver3` flag produces expected
+  cross-target warnings. Only a real Apple run can measure NEON, Accelerate, or
+  performance/efficiency-core topology.
+- An automatic CUDA-enabled `cargo test` on this host can expose ordering races
+  between legacy tests that share process-global CUDA plan trackers: parallel
+  order failed the plan-lifetime assertion and serial order later failed the
+  basic simulation assertion, while each affected test passed alone. This CPU
+  unit's authoritative Rust gate is therefore the explicit CPU-only build
+  below; standing required-CUDA validation remains separate and must follow the
+  host-device procedure in `AGENTS.md`.
+
+**Tests:**
+
+- Matched ten-sample fixed-step A/B on physical core 2 with one Julia/FFTW/
+  BLAS/OMP thread: mode-averaged rotational Raman `1.48384 -> 1.03398 ms`
+  (30.3%); radial Kerr `19.6087 -> 10.2834 ms` (47.6%); radial mixture
+  `19.7691 -> 10.2726 ms` (48.0%); radial rotational Raman
+  `110.020 -> 69.5207 ms` (36.8%); radial shot noise
+  `41.5752 -> 22.3505 ms` (46.2%). Julia-visible native-step allocation fell
+  from 16,616--787,000 bytes to 96 bytes in every cell. Retained captures are
+  `/tmp/amalthea-focused-baseline-fixed-step.json` and
+  `/tmp/amalthea-focused-after-fixed-step.json`.
+- Matched adaptive-solve A/B: the same fixtures improved 31.1%, 49.6%, 49.7%,
+  37.9%, and 48.2%; allocation fell from 49,608--18,885,744 bytes to
+  480--1,088. Final-field relative errors were `2.43e-16` through `2.01e-7`,
+  below the unchanged `1e-6` full-solve tier. The post-change capture is
+  `/tmp/amalthea-focused-after-adaptive-solve.json`; the frozen baseline is
+  `test/performance_audit/results/matrix-adaptive_solve-medium.json`.
+- Field synchronization stayed stable: radial `8.871 -> 8.812 us` (+0.67%),
+  modal `1.176 -> 1.200 us` (-2.02%, noise), with essentially unchanged
+  allocations. This isolates the gain to avoided synchronization/allocation,
+  not altered transfer semantics.
+- `AMALTHEA_CUDA_BUILD=off cargo test --release --no-fail-fast --
+  --test-threads=1`: 83 Rust unit tests plus five build-policy tests passed.
+  Focused QDHT mode/null/invalid tests and scalar/AVX2
+  parity over oscillator counts `1,2,3,4,5,49,50,65`, time lengths `2,7,67`,
+  and adversarial signs passed at `2e-13`. `cargo check --release --target
+  aarch64-unknown-linux-gnu` compiled the NEON path.
+- QDHT Julia tests passed real/complex multiply and round-trip checks plus
+  resident full solves. The explicit policy test passed 12/12:
+  `auto == on`, `off == deterministic`, BLAS and Rayon are bitwise distinct,
+  and agree at `rtol=1e-12`.
+- Native phase-1 lifecycle/rejection/dense-output/window synchronization passed
+  30/30 after the `locextrap=false` correction; its full-solve error was
+  `2.75e-16`. The broader focused backend/QDHT/dense set passed 96 assertions
+  after that correction.
+- `JULIA_NUM_THREADS=4` TransModal focused tests passed 12/12, including exact
+  one-thread/four-thread results, forced GC, recognized plasma cloning, and
+  sequential stateful-callback fallback. The complete `sim-multimode` group
+  passed 53/53.
+- Legacy plus concurrent QueueExec scan tests passed 193/193, including two
+  simultaneous scans, exact-once execution, callback failure marking, cleanup,
+  no leaked workers, one thread per worker, and concurrent resident native
+  simulations. The timing-manifest registry then passed 406/406.
+- Complete `sim-interface` passed 314/314. The complete `rust` group executed
+  42,914 cases: 42,901 passed, 11 expected CUDA broken/skips, and the only two
+  failures were missing timing-manifest entries for the two newly added tests;
+  those entries were added and the focused manifest gate passed 406/406.
+- The Apple runner passed Python byte-compilation, Linux
+  `--allow-non-apple --dry-run`, and its four-thread modal auxiliary exactness
+  check. An actual Apple run was impossible on this x86_64 Linux host, so no
+  Apple timing, Accelerate claim, or LTO promotion is recorded.
+- `JULIA_DEPOT_PATH=/tmp/amalthea-docs-depot:/home/diego/.julia julia
+  --startup-file=no --project=docs docs/make.jl` passed doctests,
+  cross-references, document checks, and HTML rendering; only expected local
+  no-deploy/remote-HEAD warnings were emitted. Python byte-compilation, the
+  Apple dry-run JSON/Markdown schema, and `git diff --check` also passed.
+
+**Next:** On an Apple Silicon host run
+`python3 test/performance_audit/run_apple_quick_test.py --output
+test/performance_audit/results/apple-quick.json` (which also writes the sibling
+`apple-quick.md`), inspect the three separate
+NEON/QDHT/topology levers, and retain the result. Promote thin LTO only if that
+Apple result and a repeated local end-to-end run both exceed 5% with all gates
+green. Standing required-CUDA CI remains a separate deliberately deferred lead
+decision.

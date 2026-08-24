@@ -6,7 +6,26 @@ this fork's own, starting from the point the Rust backend was introduced.
 
 ## [Unreleased]
 
+### Added
+- Added AVX2 and AArch64 NEON Raman ADE recurrence kernels with scalar-tail and
+  scalar-oracle parity tests.
+- Added scratch-isolated Julia `TransModal` callback batching for recognized
+  standard Kerr, Julia plasma, and Julia Raman responses, with conservative
+  sequential fallback for arbitrary/stateful closures and legacy Rust handles.
+- Added a 5–10 minute Apple Silicon JSON/Markdown diagnostic covering Raman,
+  radial QDHT, modal threading, two-worker scans, and a safely restored
+  host-native thin-LTO comparison build.
+
 ### Changed
+- Resident radial QDHT now initializes Julia's configured BLAS provider
+  directly and selects BLAS automatically above the measured workload
+  threshold. `AMALTHEA_QDHT_BLAS` accepts `off`/`auto`/`on` (`0`/`1` aliases);
+  deterministic mode still forces Rayon.
+- `QueueExec` now uses stable cache-directory queue names, local queue state,
+  guaranteed worker cleanup, and `threads_per_worker=1` by default to bound
+  Julia, FFTW, and resident Rayon concurrency.
+- Native step attempts reuse the dense-output left-endpoint buffer and avoid
+  redundant field synchronization for the built-in no-op callback.
 - Corrected public documentation, authorship, compatibility, registry, and
   historical hardware-dispatch claims after the v1.0.3 release audit.
 - Added a reproducible, equivalence-checked Julia-oracle versus resident-native

@@ -184,7 +184,10 @@ function solve(s, tmax; stepfun=donothing!, output=false, outputN=201,
                 end
             end
             stepfun(s.yn, s.tn, s.dtn, t -> interpolate(s, t))
-            _native_field_resync!(s)
+            # The built-in no-op cannot have changed Julia's field mirror, so
+            # avoid an otherwise redundant full-field FFI copy. Any user
+            # callback remains conservatively synchronized.
+            stepfun === donothing! || _native_field_resync!(s)
             repeated = 0
         else
             repeated += 1
@@ -1550,22 +1553,11 @@ function RustNativeStepper(f!, linop, y0, t, dt;
     check_ffi(rc, "native_set_threads")
 
     # docs/dev/BACKLOG.md S5.2: deterministic mode. `AMALTHEA_NATIVE_DETERMINISTIC=1`
-    # forces the radial-geometry QDHT to skip the BLAS-3 `dgemm` path
-    # (`AMALTHEA_QDHT_BLAS`) even if it's enabled, using the row-parallel Rayon
-    # fallback instead. The native path is already run-to-run deterministic
-    # on one machine by default — every parallel seam here (the QDHT
-    # fallback, the older per-kernel `AMALTHEA_USE_RUST_QDHT` batch loops) is
-    # embarrassingly parallel with no cross-thread reduction, and native
-    # FFTW plans only ever use `FFTW_ESTIMATE`. The real lever this flag
-    # has: `BLAS_API` (amalthea's `blas.rs`) is a process-global
-    # `OnceLock`, populated only by the per-kernel
-    # `AMALTHEA_USE_RUST_QDHT`+`AMALTHEA_QDHT_BLAS` path — once that happens
-    # anywhere in the process, every *later* native-path QDHT call becomes
-    # eligible for BLAS too. `deterministic=true` makes that eligibility
-    # invariant to whether some other part of the process touched BLAS,
-    # and to which BLAS library/thread-count is linked — not a claim that
-    # a fixed BLAS state is otherwise repeat-run unstable at these problem
-    # sizes. Default off (matches every prior behavior exactly).
+    # forces radial QDHT to skip the configured-BLAS `dgemm` path and use
+    # the fixed-order Rayon kernel. BLAS is initialized directly for every
+    # eligible resident radial construction; the deterministic flag therefore
+    # selects a stable handle-local policy independent of construction order.
+    # Native FFTW plans continue to use `FFTW_ESTIMATE`. Default off.
     # **Not guaranteed:** bit-identical results across different
     # machines/CPU targets — the crate is built with `target-cpu=native`,
     # so a different build host takes a different SIMD/libm path.
@@ -1852,6 +1844,10 @@ function RustNativeStepper(f!, linop, y0, t, dt;
     # length (`n_spec`) and the FFI's internal buffer sizing both already
     # generalize to either grid type without further changes here.
     if is_radial
+        # Resident QDHT owns its own handle and must initialize Julia's
+        # configured libblastrampoline directly; the legacy per-kernel QDHT
+        # toggle is intentionally unrelated.
+        Amalthea.NonlinearRHS._init_rust_qdht_blas()
         HT = f!.QDHT
         n_r = HT.N
         n % n_r == 0 || error("RustNativeStepper: field length $n not divisible by QDHT.N=$n_r")
@@ -1940,6 +1936,12 @@ function RustNativeStepper(f!, linop, y0, t, dt;
             towin, kerr_fac,
             real.(M), imag.(M))
         check_ffi(rc, "native_set_radial_params")
+
+        qdht_policy = Amalthea.Config.backend_config().qdht_blas
+        qdht_mode = qdht_policy === :off ? 0 : qdht_policy === :on ? 2 : 1
+        rc = ccall((:native_set_qdht_blas_mode, _LIBAMALTHEA_RK45), Cint,
+            (Ptr{Cvoid}, Cint), handle.ptr, qdht_mode)
+        check_ffi(rc, "native_set_qdht_blas_mode")
 
         # Phase I item 1: wire modified shot-noise. `f!.Et_noise` is
         # column-major `(n_time_over, n_r)` (Float64 for RealGrid, ComplexF64
@@ -2559,10 +2561,10 @@ function RustNativeStepper(f!, linop, y0, t, dt;
 end
 
 function step!(s::RustNativeStepper)
-    # native_step overwrites s.yn in place; snapshot the pre-call value (the
-    # field at the start of this interval, s.t) so interpolate() has a valid
-    # start-of-interval field once the step is accepted.
-    y_before = copy(s.yn)
+    # native_step overwrites s.yn in place. The reusable s.y buffer is the
+    # accepted interval's left endpoint for dense output; on rejection its
+    # contents are unobservable and are simply refreshed on the retry.
+    copyto!(s.y, s.yn)
 
     result_ref = Ref(NativeStepResult(0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
     rc = ccall((:native_step, _LIBAMALTHEA_RK45), Cint,
@@ -2579,10 +2581,6 @@ function step!(s::RustNativeStepper)
     s.dtn = res.dtn
     s.err = res.err
     s.errlast = res.errlast
-
-    if s.ok
-        s.y .= y_before
-    end
 
     return s.ok
 end

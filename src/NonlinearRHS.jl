@@ -6,7 +6,7 @@ import Base: show
 import LinearAlgebra
 import LinearAlgebra: mul!, ldiv!
 import NumericalIntegration: integrate, SimpsonEven
-import Amalthea: PhysData, Modes, Maths, Grid, Config
+import Amalthea: PhysData, Modes, Maths, Grid, Config, Nonlinear
 import Amalthea.PhysData: wlfreq
 import Logging: @warn
 import Amalthea.Utils: lunadir
@@ -37,15 +37,10 @@ mutable struct RustQdhtHandle
 end
 
 function _init_rust_qdht_blas()
-    # Default OFF (opt-in, not opt-out): fixed 2026-07-09 (docs/dev/BACKLOG.md S1 item
-    # 5) — `blas.rs` now binds the ILP64 Fortran `dgemm_64_` entry point
-    # directly (the same symbol/calling-convention Julia's own
-    # `LinearAlgebra.BLAS.gemm!` resolves to), replacing the broken
-    # `cblas_dgemm` dispatch-stub call that used to silently corrupt QDHT
-    # results. Verified via `test_qdht_rust.jl`'s mul!/ldiv! equivalence
-    # tests. Still opt-in pending a perf benchmark (≥1.5× at n_r=256) before
-    # flipping the default — see that BACKLOG entry.
-    Config.backend_config().qdht_blas || return
+    # Bind Julia's configured libblastrampoline directly. `:off` is the only
+    # policy that avoids initialization; per-handle policy still decides
+    # whether an actual transform uses BLAS.
+    Config.backend_config().qdht_blas === :off && return
     try
         blas_path = Libdl.dlpath(Libdl.dlopen(LinearAlgebra.BLAS.libblastrampoline))
         rc = ccall((:init_blas_path, _LIBAMALTHEA_RHS), Cint, (Cstring,), blas_path)
@@ -72,11 +67,14 @@ function _make_rust_qdht_handle(HT, n_time::Int)
     end
     ptr == C_NULL && (@warn "init_qdht_ffi returned null; QDHT stays on Julia"; return nothing)
     h = RustQdhtHandle(ptr)
-    # docs/dev/BACKLOG.md S5.2: this is the only call site that ever populates the
-    # process-global `BLAS_API` (via `_init_rust_qdht_blas` above), so it's
-    # also where `deterministic` must be applied to actually take effect.
+    # Deterministic mode is handle-local; BLAS initialization is process-global
+    # and shared by legacy and resident radial construction.
     ccall((:qdht_ffi_set_deterministic, _LIBAMALTHEA_RHS), Cint,
           (Ptr{Cvoid}, Cint), h.ptr, Config.backend_config().deterministic ? 1 : 0)
+    policy = Config.backend_config().qdht_blas
+    mode = policy === :off ? 0 : policy === :on ? 2 : 1
+    ccall((:qdht_ffi_set_blas_mode, _LIBAMALTHEA_RHS), Cint,
+          (Ptr{Cvoid}, Cint), h.ptr, mode)
     h
 end
 
@@ -283,6 +281,20 @@ Transform E(ω) -> Pₙₗ(ω) for multimode propagation via spatial integration
 - `Er_noise`: preallocated buffer for the real-space time-domain noise, same shape as `Er`.
 - `Er_nl`: preallocated buffer for the combined field + noise, passed to `Et_to_Pt!`.
 """
+struct ModalScratch{tsT, eωT, eωoT, eT, pT, pωT, pωoT, pmωT, rT, enT, enlT}
+    ts::tsT
+    Erω::eωT
+    Erωo::eωoT
+    Er::eT
+    Pr::pT
+    Prω::pωT
+    Prωo::pωoT
+    Prmω::pmωT
+    resp::rT
+    Er_noise::enT
+    Er_nl::enlT
+end
+
 mutable struct TransModal{tsT, lT, TT, FTT, rT, gT, dT, ddT, nT, eT, enT, enlT}
     ts::tsT
     full::Bool
@@ -310,6 +322,8 @@ mutable struct TransModal{tsT, lT, TT, FTT, rT, gT, dT, ddT, nT, eT, enT, enlT}
     Emω_noise::eT # modal noise field for modified shot-noise model, or nothing
     Er_noise::enT # buffer for real-space time-domain noise, or nothing
     Er_nl::enlT # buffer for field+noise passed to Et_to_Pt!, or nothing
+    modal_scratch::Vector{Any} # one disjoint scratch object per scheduled task
+    modal_threaded::Bool # false for unsafe/stateful response families
 end
 
 function show(io::IO, t::TransModal)
@@ -325,7 +339,8 @@ function show(io::IO, t::TransModal)
 end
 
 """
-    TransModal(grid, ts, FT, resp, densityfun, norm!; rtol=1e-3, atol=0.0, mfcn=300, full=false, noise_field=nothing)
+    TransModal(grid, ts, FT, resp, densityfun, norm!; rtol=1e-3, atol=0.0,
+               mfcn=300, full=false, noise_field=nothing, threaded=true)
 
 Construct a `TransModal`, transform E(ω) -> Pₙₗ(ω) for modal fields.
 
@@ -343,9 +358,14 @@ Construct a `TransModal`, transform E(ω) -> Pₙₗ(ω) for modal fields.
 - `noise_field=nothing` : optional `(nω, nmodes)` noise field for the modified shot-noise
   model. Each mode column should contain independent noise with the one-photon-per-mode
   spectral density. Generate with [`Fields.generate_noise_field`](@ref Amalthea.Fields.generate_noise_field).
+- `threaded=true`: parallelise independent Cubature callback columns when Julia has more
+  than one thread and every response can be cloned safely. Plain Kerr, Julia-only
+  `PlasmaCumtrapz`, and Julia-only Raman responses are supported; arbitrary/stateful
+  closures and responses carrying legacy Rust handles remain sequential.
 """
 function TransModal(tT, grid, ts::Modes.ToSpace, FT, resp, densityfun, norm!;
-                    rtol=1e-3, atol=0.0, mfcn=512, full=false, noise_field=nothing)
+                    rtol=1e-3, atol=0.0, mfcn=512, full=false, noise_field=nothing,
+                    threaded=true)
     Emω = Array{ComplexF64,2}(undef, length(grid.ω), ts.nmodes)
     Erω = Array{ComplexF64,2}(undef, length(grid.ω), ts.npol)
     Erωo = Array{ComplexF64,2}(undef, length(grid.ωo), ts.npol)
@@ -367,9 +387,18 @@ function TransModal(tT, grid, ts::Modes.ToSpace, FT, resp, densityfun, norm!;
         Er_noise = nothing
         Er_nl = nothing
     end
-    TransModal(ts, full, Modes.dimlimits(ts.ms[1]), Emω, Erω, Erωo, Er, Pr, Prω, Prωo, Prmω,
-               FT, resp, grid, densityfun, densityfun(0.0), norm!, 0, 0.0, rtol, atol, mfcn,
-               similar(Prmω), Emω_noise, Er_noise, Er_nl)
+    out = TransModal(ts, full, Modes.dimlimits(ts.ms[1]), Emω, Erω, Erωo, Er, Pr, Prω, Prωo, Prmω,
+                     FT, resp, grid, densityfun, densityfun(0.0), norm!, 0, 0.0, rtol, atol, mfcn,
+                     similar(Prmω), Emω_noise, Er_noise, Er_nl, Any[], false)
+    if threaded && Threads.nthreads() > 1 && _modal_responses_threadsafe(resp)
+        try
+            out.modal_scratch = [_make_modal_scratch(out) for _ in 1:Threads.nthreads()]
+            out.modal_threaded = true
+        catch e
+            @warn "could not create independent modal response scratch; using sequential callback" exception=e
+        end
+    end
+    out
 end
 
 function TransModal(grid::Grid.RealGrid, args...; kwargs...)
@@ -389,6 +418,9 @@ function reset!(t::TransModal, Emω::Array{ComplexF64,2}, z::Float64)
 end
 
 function pointcalc!(fval, xs, t::TransModal)
+    if t.modal_threaded && size(xs, 2) > 1
+        return _pointcalc_threaded!(fval, xs, t)
+    end
     for i in 1:size(xs, 2)
         x1 = xs[1, i]
         # on or outside boundaries are zero
@@ -401,7 +433,7 @@ function pointcalc!(fval, xs, t::TransModal)
             if t.dimlimits[1] == :polar
                 pre = x1
             else
-                if x2 <= t.dimlimits[2][2] || x1 >= t.dimlimits[3][2]
+                if x2 <= t.dimlimits[2][2] || x2 >= t.dimlimits[3][2]
                     fval[:, i] .= 0.0
                     continue
                 end
@@ -424,6 +456,115 @@ function pointcalc!(fval, xs, t::TransModal)
         mul!(t.Prmω, t.Prω, transpose(t.ts.Ems))
         fval[:, i] .= pre.*reshape(reinterpret(Float64, t.Prmω), length(t.Emω)*2)
     end
+end
+
+@inline _plain_modal_kerr(r) = begin
+    flds = fieldnames(typeof(r))
+    length(flds) == 1 && occursin("γ3", string(flds[1]))
+end
+
+@inline function _has_legacy_rust_handle(x)
+    hasproperty(x, :rust_handle) && !isnothing(getproperty(x, :rust_handle))
+end
+
+function _modal_responses_threadsafe(resp)
+    resp isa Tuple && return all(_modal_responses_threadsafe, resp)
+    _plain_modal_kerr(resp) && return true
+    if resp isa Nonlinear.PlasmaCumtrapz
+        return !_has_legacy_rust_handle(resp.ratefunc)
+    elseif resp isa Nonlinear.RamanPolarField || resp isa Nonlinear.RamanPolarEnv
+        return !_has_legacy_rust_handle(resp)
+    end
+    false
+end
+
+_clone_modal_response(resp::Tuple) = map(_clone_modal_response, resp)
+_clone_modal_response(resp::Function) = resp
+function _clone_modal_response(resp::Nonlinear.PlasmaCumtrapz)
+    Nonlinear.PlasmaCumtrapz(
+        resp.ratefunc, resp.ionpot, similar(resp.rate), similar(resp.fraction),
+        similar(resp.phase), similar(resp.J), similar(resp.P), resp.δt, resp.preionfrac)
+end
+function _clone_modal_response(resp::Nonlinear.RamanPolarField)
+    t = range(0.0, step=resp.dt, length=length(resp.Pout))
+    Nonlinear.RamanPolarField(t, resp.r; thg=resp.thg, rust_handle=nothing)
+end
+function _clone_modal_response(resp::Nonlinear.RamanPolarEnv)
+    t = range(0.0, step=resp.dt, length=length(resp.Pout))
+    Nonlinear.RamanPolarEnv(t, resp.r)
+end
+
+function _make_modal_scratch(t::TransModal)
+    components = t.ts.indices == 1:2 ? :xy : t.ts.indices == 1 ? :x : :y
+    ts = Modes.ToSpace(t.ts.ms; components)
+    ModalScratch(ts, similar(t.Erω), similar(t.Erωo), similar(t.Er), similar(t.Pr),
+                 similar(t.Prω), similar(t.Prωo), similar(t.Prmω),
+                 _clone_modal_response(t.resp),
+                 isnothing(t.Er_noise) ? nothing : similar(t.Er_noise),
+                 isnothing(t.Er_nl) ? nothing : similar(t.Er_nl))
+end
+
+function _Erω_to_Prω!(s::ModalScratch, t::TransModal, x)
+    Modes.to_space!(s.Erω, t.Emω, x, s.ts, z=t.z)
+    to_time!(s.Er, s.Erω, s.Erωo, inv(t.FT))
+    if !isnothing(t.Emω_noise)
+        Modes.to_space!(s.Erω, t.Emω_noise, x, s.ts, z=t.z)
+        to_time!(s.Er_noise, s.Erω, s.Erωo, inv(t.FT))
+        @. s.Er_nl = s.Er + s.Er_noise
+        Et_to_Pt!(s.Pr, s.Er_nl, s.resp, t.density)
+    else
+        Et_to_Pt!(s.Pr, s.Er, s.resp, t.density)
+    end
+    @. s.Pr *= t.grid.towin
+    to_freq!(s.Prω, s.Prωo, s.Pr, t.FT)
+    @. s.Prω *= t.grid.ωwin
+    t.norm!(s.Prω)
+end
+
+function _pointcalc_column!(fcolumn, xs, t::TransModal, s::ModalScratch)
+    x1 = xs[1]
+    if x1 <= t.dimlimits[2][1] || x1 >= t.dimlimits[3][1]
+        fill!(fcolumn, 0.0)
+        return 0
+    end
+    if length(xs) > 1
+        x2 = xs[2]
+        if t.dimlimits[1] == :polar
+            pre = x1
+        else
+            if x2 <= t.dimlimits[2][2] || x2 >= t.dimlimits[3][2]
+                fill!(fcolumn, 0.0)
+                return 0
+            end
+            pre = 1.0
+        end
+    else
+        x2 = 0.0
+        pre = t.dimlimits[1] == :polar ? 2π*x1 : 1.0
+    end
+    _Erω_to_Prω!(s, t, (x1, x2))
+    mul!(s.Prmω, s.Prω, transpose(s.ts.Ems))
+    fcolumn .= pre .* reshape(reinterpret(Float64, s.Prmω), length(t.Emω)*2)
+    1
+end
+
+function _pointcalc_threaded!(fval, xs, t::TransModal)
+    npoints = size(xs, 2)
+    ntasks = min(length(t.modal_scratch), npoints)
+    tasks = map(1:ntasks) do taskidx
+        lo = fld((taskidx - 1) * npoints, ntasks) + 1
+        hi = fld(taskidx * npoints, ntasks)
+        Threads.@spawn begin
+            scratch = t.modal_scratch[taskidx]
+            count = 0
+            for i in lo:hi
+                count += _pointcalc_column!(view(fval, :, i), view(xs, :, i), t, scratch)
+            end
+            count
+        end
+    end
+    t.ncalls += sum(fetch, tasks)
+    nothing
 end
 
 function Erω_to_Prω!(t, x)

@@ -269,6 +269,32 @@ adaptive trajectory against CPU native/Julia. The 2026-07-27
 and retry, with full adaptive trajectory differences of `5.42e-15` and
 `2.24e-15` on the RTX 5060 Ti.
 
+### CPU optimization/concurrency gate (2026-08-24)
+
+Allocation removal is accepted only with the existing rejected-step,
+`locextrap=false`, dense-output, and callback/window lifecycle suites green.
+The matched medium audit additionally records Julia-visible allocations: the
+optimized native fixed-step cells are 96 bytes each, down from
+16,616–787,000 bytes; complete adaptive solves are 480–1,088 bytes, down from
+49,608–18,885,744 bytes.
+
+QDHT policy coverage must exercise real and complex forward/inverse transforms,
+round trips, invalid FFI modes, and a resident radial trajectory under
+`off`/`auto`/`on` plus deterministic override. On the current workload,
+`auto == on`, `off == deterministic`, and the two kernels agree at
+`rtol=1e-12` while differing bitwise as expected from summation order.
+
+Raman SIMD coverage compares the scalar oracle with the dispatched kernel at
+1, 2, 3, 4, 5, 49, 50, and 65 oscillators, multiple time lengths, and
+adversarial signs at `2e-13`. AArch64 code must cross-compile cleanly and the
+Apple quick test supplies the runtime NEON gate on Apple hardware.
+
+Julia modal batching requires exact sequential/four-thread callback arrays
+under `FFTW_ESTIMATE`, forced-GC repeats, and proof that stateful closures stay
+sequential. Queue tests require simultaneous scans, exact-once result files,
+failure marking, stable queue removal, one-thread worker topology, concurrent
+resident handles, and no leaked `Distributed` workers.
+
 ## 5. Commands
 
 ```bash

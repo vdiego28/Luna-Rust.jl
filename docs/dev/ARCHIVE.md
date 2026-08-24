@@ -1156,7 +1156,9 @@ exists (Phase G.3).*
    QDHT micro-bench at n_r=256 this item's own gate also asked for,
    before flipping `AMALTHEA_QDHT_BLAS` to default-on — that's a timeboxed
    perf measurement, separate from the correctness fix; until it's run,
-   leave the opt-in default as-is.
+   leave the opt-in default as-is. *(Historical state at this entry: the
+   2026-08-24 CPU audit later completed the measurement and enabled the
+   thresholded `auto` default; see `native-port/PLANS.md` §15.)*
 6. 🟢 **Parked 2026-07-10 (negative ROI, revisit after current backlog).**
    Split-complex exp-linop spike (item 3b) —
    `amalthea/benches/exp_linop_layout_bench.rs` (Criterion-only, no

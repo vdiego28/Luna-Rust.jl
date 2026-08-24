@@ -6,4 +6,5 @@ test_multimode.jl 257.1
 test_polarisation.jl 15.4
 test_polarisation_env.jl 31.6
 test_polarisation_field.jl 200.7
+test_transmodal_julia_threading.jl 6.0
 test_transmodal_vector_plasma.jl 19.8

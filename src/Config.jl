@@ -31,8 +31,9 @@ Fields (each `Bool`, default `false` unless noted):
 - `raman`: `AMALTHEA_USE_RUST_RAMAN` — time-domain Raman SDO ADE kernel.
 - `dispersion`: `AMALTHEA_USE_RUST_DISPERSION` — Zeisberger/Marcatili neff/β.
 - `qdht`: `AMALTHEA_USE_RUST_QDHT` — batch QDHT transform kernel.
-- `qdht_blas`: `AMALTHEA_QDHT_BLAS` — BLAS-3 dgemm path for QDHT (opt-in on top
-  of `qdht`; see docs/dev/BACKLOG.md S1 item 5).
+- `qdht_blas`: `AMALTHEA_QDHT_BLAS` (`"off"`/`"on"`/`"auto"`, default
+  `"auto"`; `0`/`1` are aliases) — configured-BLAS policy for both legacy and
+  resident QDHT handles. Deterministic mode always forces the Rayon path.
 - `native_wisdom`: `AMALTHEA_NATIVE_FFTW_WISDOM` — on-disk FFTW planner-wisdom
   persistence for the native path (default off; see
   `docs/dev/native-port/PLANS.md §1`).
@@ -57,7 +58,7 @@ Base.@kwdef struct BackendConfig
     raman::Bool = false
     dispersion::Bool = false
     qdht::Bool = false
-    qdht_blas::Bool = false
+    qdht_blas::Symbol = :auto
     native_wisdom::Bool = false
     deterministic::Bool = false
 end
@@ -68,6 +69,12 @@ _truthy(var, default) = get(ENV, var, default) == "1"
 function _gpu_mode(var, default)
     v = get(ENV, var, default)
     v == "off" ? :off : v == "on" ? :on : :auto
+end
+
+"`0`/`off`, `1`/`on`, and `auto` select the QDHT BLAS policy; typos fall back to `:auto`."
+function _qdht_blas_mode(var, default)
+    v = lowercase(get(ENV, var, default))
+    v in ("0", "off") ? :off : v in ("1", "on") ? :on : :auto
 end
 
 """
@@ -92,7 +99,7 @@ function backend_config()
         raman        = _truthy("AMALTHEA_USE_RUST_RAMAN", "0"),
         dispersion   = _truthy("AMALTHEA_USE_RUST_DISPERSION", "0"),
         qdht         = _truthy("AMALTHEA_USE_RUST_QDHT", "0"),
-        qdht_blas    = _truthy("AMALTHEA_QDHT_BLAS", "0"),
+        qdht_blas    = _qdht_blas_mode("AMALTHEA_QDHT_BLAS", "auto"),
         native_wisdom= _truthy("AMALTHEA_NATIVE_FFTW_WISDOM", "0"),
         deterministic= _truthy("AMALTHEA_NATIVE_DETERMINISTIC", "0"),
     )

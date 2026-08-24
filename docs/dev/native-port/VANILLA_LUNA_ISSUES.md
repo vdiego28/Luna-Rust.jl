@@ -521,13 +521,15 @@ policy, and ADK received the corresponding guard. Eleven Rust tests cover
 was initially missing; adding it surfaced a real bug in `blas.rs` involving
 `libblastrampoline`'s dynamic dispatch. The path was left disabled by default
 until the corrected entry point below landed.
-**Status: Correctness fixed 2026-07-09; default flip deliberately parked.**
+**Status: Correctness fixed 2026-07-09; automatic policy enabled 2026-08-24.**
 The implementation now binds Julia's configured ILP64 Fortran
 `dgemm_64_` entry point with the correct by-reference arguments and hidden
 string lengths. Production equivalence passes through the already-loaded
 `libblastrampoline`; a bare Rust process cannot configure that trampoline
-and is not a valid test topology. `AMALTHEA_QDHT_BLAS` remains opt-in because
-the separate ≥1.5× n_r=256 performance gate was not demonstrated.
+and is not a valid test topology. The later CPU audit demonstrated a strong
+configured-BLAS advantage across the radial sweep and complete workloads, so
+`AMALTHEA_QDHT_BLAS=auto` is now the default above the measured threshold;
+explicit `off` and deterministic mode retain Rayon.
 
 ### Concurrent-process races on shared native FFTW-wisdom / scan-lock files
 **Found:** 2026-07-09, during test-gate redistribution.

@@ -711,7 +711,7 @@ mod tests {
             let i_np1 = intensity[n + 1];
             let mut total_q = 0.0;
             for i in 0..solver.oscillators.len() {
-                let coeffs = &solver.step_coeffs[i];
+                let coeffs = &solver.gpu_step_coeffs[i];
                 let (q, dq) = states[i];
                 let q_new =
                     coeffs.a11 * q + coeffs.a12 * dq + coeffs.b0_1 * i_n + coeffs.b1_1 * i_np1;
@@ -1082,7 +1082,7 @@ mod tests {
     fn test_qdht_ffi() {
         use super::ffi::{
             free_qdht_ffi, init_qdht_ffi, qdht_ffi_ldiv_cplx, qdht_ffi_ldiv_real,
-            qdht_ffi_mul_cplx, qdht_ffi_mul_real,
+            qdht_ffi_mul_cplx, qdht_ffi_mul_real, qdht_ffi_set_blas_mode,
         };
 
         let n_r = 8_usize;
@@ -1103,6 +1103,15 @@ mod tests {
         // ── initialise handle ──────────────────────────────────────────────────
         let ptr = unsafe { init_qdht_ffi(t_col.as_ptr(), n_r, scale_fwd, scale_inv, n_time) };
         assert!(!ptr.is_null(), "init_qdht_ffi returned null");
+        assert_eq!(unsafe { qdht_ffi_set_blas_mode(ptr, 0) }, 0);
+        assert_eq!(unsafe { qdht_ffi_set_blas_mode(ptr, 1) }, 0);
+        assert_eq!(unsafe { qdht_ffi_set_blas_mode(ptr, 2) }, 0);
+        assert_eq!(unsafe { qdht_ffi_set_blas_mode(ptr, -1) }, -1);
+        assert_eq!(unsafe { qdht_ffi_set_blas_mode(ptr, 3) }, -1);
+        assert_eq!(
+            unsafe { qdht_ffi_set_blas_mode(std::ptr::null_mut(), 1) },
+            -1
+        );
 
         // ── reference: B[t,r] = scale × Σ_s T[r,s] × A[t,s] ─────────────────
         // T[r,s] = t_col[r + n_r*s]  (Julia col-major)

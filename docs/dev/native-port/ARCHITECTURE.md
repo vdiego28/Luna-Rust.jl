@@ -239,3 +239,37 @@ leaves in place: exact bit-level step-path reproducibility across runs is
 only guaranteed with one fresh process per simulation (native shares
 FFTW's single process-global wisdom pool with Julia's own `FFTW.jl`,
 regardless of the on-disk cache toggle).
+
+## 7. Post-port CPU ownership and concurrency (2026-08-24)
+
+The resident stepper now has one allocation-free attempt boundary:
+`RustNativeStepper.step!` copies the left endpoint into its existing `y`
+buffer, and Rust temporarily transfers ownership of `field`/`ystage` while an
+RHS is evaluated. The vectors are restored before return or panic propagation;
+the FFI panic boundary therefore remains usable. `locextrap=false` copies the
+unpropagated final stage into `yn` before the last RHS, while the normal
+local-extrapolation path stays copy-free. The solve loop skips field resync only
+for the exact built-in `donothing!`; all user callbacks remain conservative.
+
+Resident radial construction initializes Julia's configured
+`libblastrampoline` directly and stores a handle-local QDHT policy:
+Rayon (`off`), thresholded configured BLAS (`auto`, default), or forced BLAS
+(`on`). Deterministic mode overrides all three with Rayon. The process-global
+symbol table is shared safely with legacy QDHT handles, but construction order
+no longer changes resident eligibility.
+
+The CPU Raman solver stores oscillator state and eight recurrence coefficients
+as structure-of-arrays, dispatching to AVX2 on supported x86_64 and NEON on
+AArch64, with a scalar tail and portable scalar fallback. CUDA retains the
+packed coefficient ABI. SIMD lanes update state together, then polarization is
+accumulated lane-by-lane in oscillator order.
+
+The retained Julia modal fallback now mirrors Rust's ownership rule for
+recognized standard responses: each spawned callback task owns a
+`ModalScratch` containing `ToSpace` state, transform arrays, response scratch,
+and optional noise buffers; tasks write disjoint output columns while
+Cubature's adaptive subdivision remains serial. Unknown/stateful closures and
+legacy Rust handles remain sequential. Independent simulation concurrency
+continues to use processes: `QueueExec(threads_per_worker=1)` bounds Julia,
+FFTW, and resident Rayon in every spawned worker and always tears workers down
+in `finally`.

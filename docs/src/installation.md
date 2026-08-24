@@ -293,7 +293,8 @@ Primary runtime settings are re-read when backend configuration is queried:
 | `AMALTHEA_USE_RUST_NATIVE` | `0` or `1`; default `1` | Enable the resident Rust CPU backend |
 | `AMALTHEA_USE_RUST_CUDA_NATIVE` | `0` or `1`; default `0` | Master opt-in for resident CUDA |
 | `AMALTHEA_NATIVE_GPU` | `off`, `auto`, `on`; default `auto` | Force CPU, use measured dispatch, or force supported CUDA configurations |
-| `AMALTHEA_NATIVE_DETERMINISTIC` | `0` or `1`; default `0` | Avoid the native QDHT BLAS path for more controlled native execution |
+| `AMALTHEA_QDHT_BLAS` | `off`, `auto`, `on` (`0`, `1` aliases); default `auto` | Force Rayon, automatically use configured BLAS above the measured QDHT threshold, or force configured BLAS |
+| `AMALTHEA_NATIVE_DETERMINISTIC` | `0` or `1`; default `0` | Force the fixed-order Rayon QDHT kernel regardless of `AMALTHEA_QDHT_BLAS` |
 | `AMALTHEA_NATIVE_FFTW_WISDOM` | `0` or `1`; default `0` | Opt into native FFTW wisdom import/export |
 
 Boolean switches recognize exactly `"1"` as enabled. GPU mode recognizes
@@ -303,8 +304,15 @@ spellings.
 Older per-kernel experimental toggles remain available for developers:
 `AMALTHEA_USE_RUST_STEPPER`, `AMALTHEA_USE_RUST_IONISATION`,
 `AMALTHEA_USE_RUST_RAMAN`, `AMALTHEA_USE_RUST_DISPERSION`,
-`AMALTHEA_USE_RUST_QDHT`, and `AMALTHEA_QDHT_BLAS`. They default to `0` and
-are not needed for normal resident-backend use.
+and `AMALTHEA_USE_RUST_QDHT`. They default to `0` and are not needed for
+normal resident-backend use. `AMALTHEA_QDHT_BLAS` is shared by the legacy and
+resident radial paths and defaults to `auto`.
+
+Resident QDHT calls Julia's configured `libblastrampoline` provider; it does
+not assume OpenBLAS. On macOS this means Accelerate is used when Julia has been
+configured for Accelerate. For Apple Silicon correctness and topology tuning,
+run `python3 test/performance_audit/run_apple_quick_test.py` from a checkout;
+the runner restores the normal portable library after its diagnostic build.
 
 ## Updating, rebuilding, and switching modes
 

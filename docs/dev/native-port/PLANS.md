@@ -2905,3 +2905,209 @@ historical correction. Zenodo record `21327636` permits an owner metadata
 revision, but this environment has no Zenodo access token or authenticated UI
 session. Its false General-registry phrase therefore remains an explicit
 owner action rather than being silently treated as fixed.
+## 15. CPU ownership, QDHT, Raman SIMD, and concurrency optimization
+
+Status: **implemented and locally validated 2026-08-24; Apple-host run pending.** This is the
+first production unit following the paused deep-performance audit. It preserves
+the frozen portable artifact and every audit result already in the dirty
+worktree. CUDA is outside this unit except that shared Raman data must retain
+the existing CUDA packing contract.
+
+### 15.1 Evidence and retention gates
+
+The accepted audit evidence gives field-sync Julia/native ratios of `0.45356x`,
+`0.68219x`, and `0.85421x` at small/medium/large sizes. Medium radial fixed RHS
+and one-step ratios are `0.81405x` and `0.77898x`. A fresh ten-sample,
+one-physical-core focused baseline on 2026-08-24 reproduces the one-step
+regressions: radial Kerr `0.59489x`, radial mixture `0.80407x`, radial
+rotational Raman without THG `0.74683x`, mode-averaged rotational Raman
+`0.66487x`, and radial shot noise `0.98595x`. Every cell passed its frozen
+correctness gate; Rust-side Julia-visible allocations were 393,784 bytes for
+plain radial steps and 787,000 bytes for the larger-scratch branches.
+
+Hardware counters are unavailable on this host even outside the workspace
+sandbox (`perf_event_paranoid=4`, no `CAP_PERFMON`). Retention therefore uses
+the audit harness's pinned-core randomized timing/allocation protocol, focused
+temporary substage timers where necessary, and exact source-level allocation
+accounting. Each production optimization must improve an affected complete
+step or solve by at least 5%, or remove a measured regression. Physics
+tolerances are not widened.
+
+### 15.2 Native-step ownership and synchronization
+
+`RustNativeStepper.step!` will copy the pre-attempt field into its existing
+`s.y` start-of-interval buffer before `native_step`, replacing the allocating
+`copy(s.yn)`. This is valid for accepted and rejected attempts: `s.y` is the
+dense-output left endpoint only after acceptance, while on rejection it may be
+overwritten by the same unchanged retry start without observable effect.
+
+The generic solve loop will call `_native_field_resync!` only when `stepfun !==
+donothing!`. Arbitrary callbacks remain conservatively synchronized even if
+they happen not to mutate the field; only the known identity callback is
+skipped. Windowing and user callbacks therefore retain the Phase-8 contract.
+
+Rust RHS dispatch currently clones `field` for stage 0 and clones `ystage` for
+every ordinary and dense-output stage to satisfy borrowing. Replace those
+allocating clones with a panic-safe ownership transfer: temporarily take the
+source `Vec`, evaluate the RHS while it is owned outside `CpuNativeSim`, restore
+it before returning, and resume any panic after restoration. One shared
+dispatch helper covers free/modal/radial/mode-averaged and both grids. This
+must keep `native_step`'s `-2` panic containment and leave a usable simulation
+after every contained panic.
+
+Required tests cover zero allocations from the Julia snapshot after warmup,
+accepted/rejected state preservation, stage-0 initialization, dense output,
+window synchronization, the no-op callback bypass, and forced GC.
+
+### 15.3 Resident QDHT BLAS policy
+
+The resident radial constructor will initialize the already-loaded,
+Julia-configured `libblastrampoline` directly; it must no longer depend on an
+older `AMALTHEA_USE_RUST_QDHT` handle having populated Rust's `BLAS_API`
+`OnceLock`. The provider is whatever Julia reports (OpenBLAS, MKL, or Apple
+Accelerate), and documentation/diagnostics report it rather than assuming
+OpenBLAS.
+
+`AMALTHEA_QDHT_BLAS` becomes a three-state policy with `auto` as the default.
+`auto` initializes BLAS and selects by workload; `1`/`on` force BLAS, while
+`0`/`off` force the Rayon kernel even if another handle initialized
+process-global BLAS. `auto` applies BLAS only above the measured work
+threshold; `AMALTHEA_NATIVE_DETERMINISTIC=1` always forces Rayon and outranks
+the BLAS policy.
+
+The local one-core sweep measured real and complex transforms for
+`n_r=2..256`, `n_time=2..4096`. Configured OpenBLAS won at every point (for
+example real 256x64: 0.4745 ms Rayon versus 0.0421 ms BLAS; real 4096x256:
+158.1 ms versus 8.90 ms). The conservative portable `auto` boundary is
+`n_time*n_r*n_r >= 4096` multiply-accumulates: all repository radial workloads
+are far above it, while tiny transforms retain Rayon rather than making an
+unverified fixed-overhead claim for every provider. The Apple quick runner
+records both sides around this boundary so Accelerate can be interpreted
+separately. Real/complex transform, round-trip, deterministic-contamination,
+and full radial-solve tests guard the policy.
+
+### 15.4 Raman structure-of-arrays SIMD
+
+The CPU ADE recurrence will store each of the eight step coefficients and the
+two oscillator state components in structure-of-arrays vectors. CUDA retains
+its packed `PrecomputedStepCoeffs` transfer representation, generated once at
+construction, so the device ABI does not change.
+
+The scalar loop remains the portable oracle. AVX2 processes four oscillators
+per lane group after runtime `is_x86_feature_detected!("avx2")`; AArch64 NEON
+processes two. Both use unaligned loads/stores, the scalar formula's multiply
+and add order, a scalar tail, and scalar lane-by-lane accumulation of `q_new`
+in original oscillator order. That last step preserves the total Raman
+polarization reduction order even though recurrence updates are vectorized.
+
+Tests compare scalar and selected SIMD kernels for 1, 2, 3, 4, 5, 49, 50, and
+65 oscillators, multiple time lengths, and adversarial coefficients. x86
+runtime dispatch and AArch64 compile/runtime NEON are separate gates. Plain
+SDO and rotational Raman complete-step/full-solve comparisons retain their
+existing ADE-vs-FFT tolerances and non-vacuity checks.
+
+### 15.5 Julia modal fallback threading
+
+`TransModal` will keep Cubature's adaptive subdivision and reduction order
+serial. Only the independent columns in each vector callback batch are
+parallel. Each scheduled task receives one permanently distinct
+`ModalScratch`: its own `Modes.ToSpace.Ems`, spectral/time/polarization arrays,
+noise arrays, FFT/Hilbert scratch, and cloned mutable response state. Output
+columns are disjoint and no cross-node reduction moves into Julia threads.
+
+Threading is enabled only when every response is recognized and safely cloned:
+plain Kerr closures, Julia `PlasmaCumtrapz` rate objects without a legacy Rust
+handle, and Julia `RamanPolarField`/`RamanPolarEnv` objects without a legacy
+Rust handle. Nested mixture tuples are cloned recursively. Any arbitrary
+closure, unknown response, or legacy Rust handle retains the existing
+sequential callback. Task-to-scratch assignment is explicit rather than based
+on `threadid()`, so task migration cannot cause two nodes to share scratch.
+
+The one-thread result and a four-thread result must be bit-identical whenever
+the cloned plan selects the same FFTW algorithm; the test environment uses
+`FFTW_ESTIMATE` to make that guarantee explicit. Tests also cover native/Julia
+equivalence, `full=false` and `full=true`, scalar/vector fields, plasma/Raman,
+sequential fallback for a stateful closure and legacy handle, and forced-GC
+stress.
+
+### 15.6 Process-parallel scan topology
+
+`QueueExec` gains `threads_per_worker=1` while retaining the zero-, one-, and
+two-positional-argument constructors. Spawned processes receive
+`--threads=N`; FFTW is set to the same bound and resident Rayon follows Julia's
+thread count, preventing the previous implicit process x Julia x Rayon/FFTW
+oversubscription. Existing external multi-session queues remain unchanged.
+
+Queue filename derivation becomes stable and rooted in `Utils.cachedir()`.
+`_runscan` uses closure-local `scanidx`/`qdata`, never function-global state.
+Spawn/fetch is wrapped in `try/finally` so every process created by the call is
+removed after success, callback failure, worker failure, or interruption.
+Tests run simultaneous differently-named scans, assert exact-once execution,
+failure marking and queue cleanup, verify no leaked workers, and exercise two
+concurrent native simulations.
+
+### 15.7 Apple quick runner and build policy
+
+`test/performance_audit/run_apple_quick_test.py` is the single entry point. In
+5--10 minutes it writes JSON plus a Markdown summary containing the M-chip and
+performance/efficiency core counts, macOS/Julia/Rust versions, FFTW library,
+configured BLAS provider, and thread environment. It times rotational Raman,
+radial RealGrid QDHT, Julia modal threading, and a two-worker queue scan, with
+1/2/4-thread rows where applicable.
+
+The runner first builds the portable CPU contract, then one diagnostic
+host-native/thin-LTO/one-codegen-unit artifact, and restores the portable
+artifact in `finally`. It reports NEON Raman, configured-BLAS QDHT, and
+process/thread topology separately. Thin LTO is not promoted to the production
+profile unless both this local host and a real Apple run show at least a 5%
+end-to-end gain with identical portability/correctness gates.
+
+### 15.8 Implemented result and retained evidence
+
+The allocation/ownership, QDHT, Raman, modal, scan, and runner designs above
+are implemented. The matched ten-sample, core-2, one-thread medium fixed-step
+rerun changed native medians as follows: mode-averaged rotational Raman
+`1.48384 → 1.03398 ms` (30.3%), radial Kerr `19.6087 → 10.2834 ms` (47.6%),
+radial mixture `19.7691 → 10.2726 ms` (48.0%), radial rotational Raman
+`110.020 → 69.5207 ms` (36.8%), and radial shot noise
+`41.5752 → 22.3505 ms` (46.2%). Julia-visible per-step allocation fell from
+16,616–787,000 bytes to 96 bytes in every cell.
+
+The matching adaptive-solve medians improved 31.1%, 49.6%, 49.7%, 37.9%, and
+48.2% respectively; native solve allocations fell from 49,608–18,885,744
+bytes to 480–1,088 bytes. Final-field errors remained within the frozen
+`1e-6` tier (`2.43e-16` to `2.01e-7`). Explicit QDHT policy tests establish
+`auto == on`, `off == deterministic`, BLAS-versus-Rayon agreement at
+`rtol=1e-12`, and a non-identical summation order. Direct field synchronization
+remained stable (radial +0.67%, tiny modal -2.02%, both within noise), proving
+the solve gain comes from avoiding unnecessary transfers rather than changing
+their semantics.
+
+The Apple runner passed Python compilation, Linux `--allow-non-apple --dry-run`,
+and its four-thread modal auxiliary check. This host cannot supply M-chip,
+Accelerate, or NEON runtime measurements, so Apple JSON/Markdown results and
+any LTO decision remain explicitly pending. Production release-profile flags
+were not changed.
+
+Reproduce the retained local A/B captures from the repository root (the
+baseline command must be run before applying the source changes):
+
+```bash
+python3 test/performance_audit/run_matrix.py --size medium \
+  --measurement fixed_step --fixture radial_real_kerr \
+  --fixture radial_real_mixture \
+  --fixture radial_real_raman_nothg_rotational \
+  --fixture modeavg_real_raman_rotational --fixture radial_real_shotnoise \
+  --minimum-samples 10 --maximum-samples 10 --core 2 --threads 1 \
+  --timeout 3600 --output /tmp/amalthea-focused-fixed-step.json
+
+python3 test/performance_audit/run_matrix.py --size medium \
+  --measurement adaptive_solve --fixture radial_real_kerr \
+  --fixture radial_real_mixture \
+  --fixture radial_real_raman_nothg_rotational \
+  --fixture modeavg_real_raman_rotational --fixture radial_real_shotnoise \
+  --minimum-samples 10 --maximum-samples 10 --core 2 --threads 1 \
+  --timeout 3600 --output /tmp/amalthea-focused-adaptive-solve.json
+
+python3 test/performance_audit/run_apple_quick_test.py
+```

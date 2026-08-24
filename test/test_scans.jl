@@ -4,6 +4,7 @@ using TestItems
 import Test: @test, @testset, @test_throws
 using Amalthea
 import HDF5
+import SHA
 using Distributed
 import Logging: with_logger, NullLogger
 
@@ -222,7 +223,7 @@ end
         # check that all indices have been run once, except for the one with an error
         @test count(i2 .== scanidx) == 1
     end
-    h = string(hash(scanname); base=16)
+    h = bytes2hex(SHA.sha256(scanname))[1:16]
     qfile = joinpath(Utils.cachedir(), "qfile_$h.h5")
     @test !isfile(qfile) # check that scan completed fully and removed the queue file
     rmprocs(ps)

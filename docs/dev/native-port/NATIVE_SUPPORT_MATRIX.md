@@ -88,6 +88,21 @@ see the Modal table below).
 
 ## Cross-cutting notes
 
+- Resident radial QDHT uses Julia's configured BLAS provider automatically for
+  `n_time*n_r*n_r ≥ 4096`; `AMALTHEA_QDHT_BLAS=off` and
+  `AMALTHEA_NATIVE_DETERMINISTIC=1` retain the Rayon kernel. This changes
+  execution policy, not the supported geometry/physics surface.
+- Carrier-field ADE Raman uses runtime AVX2 on x86_64 and NEON on AArch64,
+  with scalar tails/fallback. Apple runtime results remain pending the prepared
+  quick test; AArch64 compilation and scalar/SIMD parity are already gated.
+- Julia `TransModal` fallback batches Cubature callback columns only for
+  recognized clone-safe standard responses. Arbitrary/stateful closures and
+  legacy Rust handles intentionally stay sequential; this does not change
+  native eligibility.
+- `QueueExec` is the supported independent-simulation concurrency mechanism.
+  Spawned workers default to one Julia/Rayon/FFTW thread and are always removed
+  after the scan call.
+
 - **GPU (`CudaNativeSim`, `AMALTHEA_USE_RUST_CUDA_NATIVE=1`)** is a much
   narrower slice layered on top of all of the above: the landed path is
   mode-averaged RealGrid/EnvGrid Kerr with matching SDO Raman containing

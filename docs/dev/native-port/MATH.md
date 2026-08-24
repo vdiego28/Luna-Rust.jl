@@ -163,6 +163,13 @@ math. Do **not** use `diffraction::Qdht` (a different Rust-native struct with
 its own T-matrix convention) — it does not match Julia's normalization
 (CLAUDE.md gotcha).
 
+As of 2026-08-24, the resident handle chooses the same transform through a
+three-state execution policy. `auto` uses Julia's configured BLAS provider when
+`n_time*n_r*n_r ≥ 4096`; smaller work, explicit `off`, and deterministic mode
+use the row-wise Rayon formula. Explicit `on` forces BLAS when the provider is
+available. Both kernels apply the same Julia-supplied `T` and scale; only their
+summation order differs, so they live in the reassociation tolerance tier.
+
 **FFT: loop the existing rank-1 plan over columns, don't add `plan_many`
 yet.** Julia's `plan_rfft(xt, 1)` is a batched ("many") transform over the
 `n_r` columns; the native side reuses the existing single-vector
@@ -323,14 +330,14 @@ explicitly for future phases: node placement is bit-identical (same
 `SpecialFunctions.besselj`, so ~1e-10 (not ~1e-13) is the *documented*
 ceiling even though this run landed far under it.
 
-> **Concurrency note:** Julia `TransModal` still must not use a naive
-> `Threads.@threads` loop because its `Erω`/`Prω`/`Prmω` scratch is shared;
-> that attempt raced. The resident Rust implementation safely parallelizes
-> only the independent nodes within each `libcubature` callback batch. It
-> splits read-only state into `ModalRO` and gives every worker its own
-> `ModalScratch` (including cloned Raman/Hilbert scratch), while cubature's
-> adaptive node placement remains sequential. Preserve that ownership split;
-> do not revert to shared scratch.
+> **Concurrency note:** neither backend may parallelize a shared
+> `Erω`/`Prω`/`Prmω` scratch loop; that attempt raced. Both now parallelize
+> only independent columns within each Cubature callback batch. Rust splits
+> `ModalRO` from per-worker `ModalScratch`; Julia creates one independent
+> `Modes.ToSpace`, array set, response clone, and noise scratch per scheduled
+> task. Cubature's adaptive node placement remains sequential, unknown or
+> stateful Julia responses fall back to the sequential callback, and output
+> columns are disjoint. Preserve that ownership split.
 
 ### 3.4 Free-space — `TransFree` (`src/NonlinearRHS.jl:826`) — Phase 6, ported
 2-D Cartesian spatial axis: a genuine **3-D FFT** over `(t,y,x)` jointly
@@ -660,6 +667,13 @@ exactly like Kerr/plasma — no state carries between RK stages, matching the
 Julia FFT-convolution semantics it replaces (each RHS call recomputes the
 full convolution over the current trial field, not an incremental
 step-to-step integration).
+
+The 2026-08-24 CPU implementation stores `q`, `dq`, and the eight entries of
+`A/B0/B1` in separate vectors. AVX2 advances four oscillators and AArch64 NEON
+advances two; scalar tails cover every oscillator count. No SIMD horizontal
+reduction forms the polarization: updated `q` lanes are added to the total in
+their original oscillator order. This preserves the scalar recurrence's
+observable accumulation order while vectorizing the state transition.
 
 **Additive, not a replacement RHS.** Raman is just another entry in
 `TransModeAvg`'s `resp` tuple, called after Kerr in `Et_to_Pt!` and

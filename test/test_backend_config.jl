@@ -25,7 +25,7 @@ using TestItems
             @test cfg.raman == false
             @test cfg.dispersion == false
             @test cfg.qdht == false
-            @test cfg.qdht_blas == false
+            @test cfg.qdht_blas == :auto
             @test cfg.cuda_native == false
             @test cfg.gpu_dispatch == :auto
             @test cfg.native_wisdom == false
@@ -35,6 +35,12 @@ using TestItems
         # toggle mid-session must be visible immediately.
         withenv("AMALTHEA_USE_RUST_NATIVE" => "0") do
             @test Amalthea.Config.backend_config().native == false
+        end
+        for (value, expected) in (("0", :off), ("off", :off), ("1", :on),
+                                  ("on", :on), ("auto", :auto), ("typo", :auto))
+            withenv("AMALTHEA_QDHT_BLAS" => value) do
+                @test Amalthea.Config.backend_config().qdht_blas == expected
+            end
         end
     end
 

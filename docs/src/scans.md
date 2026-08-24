@@ -70,6 +70,24 @@ Scans can be executed in several ways, which are defined via the various subtype
 - [`CondorExec`](@ref Scans.CondorExec): create a submission file (aka job file) for an HTCondor batch system running on the current machine and submit it, claiming a specified number of nodes, to execute the scan using a `QueueExec`.
 - [`SSHExec`](@ref Scans.SSHExec): use one of the other `AbstractExec` types but first transfer the file to a remote host via SSH and then execute it. (**Note**: the remote machine must have Julia and Amalthea available with the same versions of both, and Julia must be available in a shell via the `julia` command.) For more details on how to set up execution over SSH, see [below](#execution-over-ssh).
 
+For independent simulations, prefer process parallelism and keep each worker
+small unless measurements justify nested threading:
+
+```julia
+exec = Scans.QueueExec(nproc=4, threads_per_worker=1)
+scan = Scan("pressure_energy", exec; energy=energies, pressure=pressures)
+```
+
+`threads_per_worker` bounds Julia threads in each spawned process and sets
+FFTW to the same value; the resident Rayon pool follows Julia's thread count.
+The default is one to avoid process × Julia × Rayon/FFTW oversubscription.
+`nproc=-1` chooses as many workers as fit the machine after dividing logical
+CPU count by `threads_per_worker`. Queue files use a stable digest below
+Amalthea's cache directory and are removed when every point is marked done or
+failed. Workers spawned by `runscan` are removed in `finally`, including after
+failures. Separate Julia sessions can still share an explicitly supplied
+queue path as before.
+
 ### Command-line arguments
 Most of the above execution modes can also be triggered by running the script (the `.jl` file) from the command line with additional arguments. To show the options, run `julia [script] --help` where `script` is your `.jl` file. As one example, running our `scan.jl` example in queue-file mode could be accomplished by `julia scan.jl --queue`, and starting 4 subprocesses to share the queue could be done by `julia scan.jl --queue -p 4`. Importantly, **command-line arguments passed to the script overwrite any explicitly created execution mode within the script.**
 

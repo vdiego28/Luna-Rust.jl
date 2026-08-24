@@ -13,6 +13,17 @@ This is the authoritative short queue. The long sections below retain design
 history and measured evidence, but older words such as "next", "not started",
 or "verified" inside a superseded narrative do not outrank this list.
 
+> **Current performance unit — implemented and locally validated 2026-08-24:**
+> native step ownership/synchronization, automatic configured-BLAS resident
+> QDHT, AVX2/AArch64 NEON Raman SIMD, safe Julia modal batching, hardened
+> `QueueExec` topology, and the Apple quick runner are complete under
+> [`native-port/PLANS.md`](native-port/PLANS.md) §15. On the frozen Zen 3
+> focused set, native fixed steps improved 30–48% and adaptive solves 31–50%,
+> with per-step Julia-visible allocation reduced to 96 bytes. The full local
+> Rust, multimode, interface, and scan gates pass. The only unfinished evidence
+> is running the prepared diagnostic on a real Apple Silicon host; no Apple
+> result or LTO promotion is claimed from this x86_64 Linux machine.
+
 > **Current handoff:** `v1.0.3` is published from tested commit `65489dd`.
 > Release-candidate run `31334708624` passed all 17 substantive jobs,
 > including native Linux ARM64 installation/FFI; release workflow

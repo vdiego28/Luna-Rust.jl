@@ -14,22 +14,10 @@ using TestItems
     else
         # Radial geometry (resident QDHT) — the only backend surface
         # `AMALTHEA_NATIVE_DETERMINISTIC` currently affects (docs/dev/BACKLOG.md S5.2):
-        # it forces the native path's QDHT to skip the opt-in BLAS-3
-        # `dgemm` path and always use the row-parallel Rayon fallback.
-        #
-        # The subtlety this test exists to catch: `crate::blas::BLAS_API`
-        # is a *process-global* `OnceLock` in the Rust library, populated
-        # only by `NonlinearRHS._init_rust_qdht_blas` (the older per-kernel
-        # `AMALTHEA_USE_RUST_QDHT` wiring). The native-port radial path never
-        # calls that itself — so in a process where no per-kernel Rust QDHT
-        # handle has ever been built, the native path *always* takes the
-        # Rayon fallback regardless of `deterministic`, and a naive
-        # "two runs bit-identical" test would pass whether or not the flag
-        # does anything at all. This test deliberately contaminates the
-        # process-global BLAS state first (mirroring a real session that
-        # mixes the per-kernel and native-port Rust paths), then checks
-        # that `deterministic=true` measurably changes which codepath the
-        # native QDHT takes.
+        # it forces the native path's QDHT to skip configured BLAS and use
+        # the fixed-order Rayon fallback. Resident construction now initializes
+        # Julia's BLAS provider directly, so the policy is independent of
+        # whether a legacy per-kernel QDHT handle was constructed first.
         gas = :Ar; pres = 1.2; τ = 20e-15; λ0 = 800e-9
         w0 = 40e-6; energy = 1e-12; L = 0.01; R = 4e-3; N = 32
 
@@ -58,7 +46,7 @@ using TestItems
             end
         end
 
-        @testset "T1: deterministic=1, two runs bit-identical (BLAS never engaged)" begin
+        @testset "T1: deterministic=1, two runs bit-identical" begin
             withenv("AMALTHEA_NATIVE_DETERMINISTIC" => "1") do
                 @test Amalthea.Config.backend_config().deterministic
 
@@ -74,12 +62,8 @@ using TestItems
             end
         end
 
-        # Deliberately populate the process-global `BLAS_API` OnceLock via
-        # the per-kernel path — the only call site that ever does. Once
-        # set, it stays set for the rest of this process, which is exactly
-        # the scenario `deterministic` must guard against for the native
-        # path (docs/dev/BACKLOG.md S1.6/S1 item 1's "process-global state
-        # contaminates later constructions" class of bug).
+        # Also construct a legacy handle: both paths must safely share the
+        # already-configured process-global BLAS symbol table.
         h = withenv("AMALTHEA_USE_RUST_QDHT" => "1", "AMALTHEA_QDHT_BLAS" => "1") do
             with_logger(NullLogger()) do
                 NonlinearRHS._make_rust_qdht_handle(q, length(grid.to))
@@ -87,30 +71,31 @@ using TestItems
         end
         @test !isnothing(h)
 
-        @testset "T2: after BLAS_API is populated, deterministic changes the QDHT codepath" begin
-            s_blas = withenv("AMALTHEA_NATIVE_DETERMINISTIC" => nothing) do
+        @testset "T2: off/auto/on policies and deterministic override" begin
+            make_stepper(policy; deterministic=nothing) = withenv(
+                    "AMALTHEA_QDHT_BLAS" => policy,
+                    "AMALTHEA_NATIVE_DETERMINISTIC" => deterministic) do
                 s = RustNativeStepper(transform, linop, copy(Eω), t0, dt,
                                        rtol=1e-6, atol=1e-10, max_dt=dt, min_dt=dt)
                 solve(s, L)
                 s
             end
-            s_det = withenv("AMALTHEA_NATIVE_DETERMINISTIC" => "1") do
-                s = RustNativeStepper(transform, linop, copy(Eω), t0, dt,
-                                       rtol=1e-6, atol=1e-10, max_dt=dt, min_dt=dt)
-                solve(s, L)
-                s
-            end
-            @test all(isfinite, s_blas.yn)
-            @test all(isfinite, s_det.yn)
+
+            s_off = make_stepper("off")
+            s_auto = make_stepper("auto")
+            s_on = make_stepper("on")
+            s_det = make_stepper("on"; deterministic="1")
+            @test all(s -> all(isfinite, s.yn), (s_off, s_auto, s_on, s_det))
             # BLAS-3 dgemm and the row-parallel Rayon fallback sum in a
-            # different order, so with BLAS_API now live, `deterministic`
-            # must produce a numerically distinct (not bit-identical)
-            # result from the default — proof the flag actually gates the
-            # BLAS branch rather than being an inert no-op.
-            @test s_blas.yn != s_det.yn
+            # different order. This workload exceeds the automatic threshold,
+            # so auto == on, while off == deterministic and differs from BLAS.
+            @test s_auto.yn == s_on.yn
+            @test s_off.yn == s_det.yn
+            @test s_on.yn != s_off.yn
+            @test s_on.yn ≈ s_off.yn rtol=1e-12
         end
 
-        @testset "T3: deterministic=1, still bit-identical across repeats after contamination" begin
+        @testset "T3: deterministic=1 remains bit-identical after legacy construction" begin
             withenv("AMALTHEA_NATIVE_DETERMINISTIC" => "1") do
                 s1 = RustNativeStepper(transform, linop, copy(Eω), t0, dt,
                                         rtol=1e-6, atol=1e-10, max_dt=dt, min_dt=dt)

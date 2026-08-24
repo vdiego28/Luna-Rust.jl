@@ -617,11 +617,8 @@ pub struct CpuNativeSim {
     pub thread_pool: Option<rayon::ThreadPool>,
 
     // ── S5.2: deterministic mode (docs/dev/BACKLOG.md) ─────────────────────────────────
-    /// When `true`, skip the QDHT BLAS-3 path (`AMALTHEA_QDHT_BLAS`) even if a
-    /// BLAS library was loaded, forcing the row-parallel Rayon fallback
-    /// instead — see `set_deterministic`'s doc on the trait for why this is
-    /// the one real lever today (no `NativeBackend` RHS code reads
-    /// `n_threads` yet; S2 Phase 3, which would have, was reverted).
+    /// When `true`, skip the configured-BLAS QDHT path and force the
+    /// fixed-order Rayon fallback. This overrides the per-handle BLAS policy.
     pub deterministic: bool,
 }
 
@@ -2716,99 +2713,90 @@ impl CpuNativeSim {
     /// `ensure_*_at` propagator utilities; no nonlinear-physics code is
     /// duplicated here, only the stage-combination bookkeeping.
     fn eval_extra_stage(&mut self, t0: f64, dt: f64, c_node: f64, stage_idx: usize) {
-        let s = self;
         let dt_prop = c_node * dt;
         let t_eval = t0 + dt_prop;
-        if s.is_free {
-            s.ensure_linop_at(t_eval);
-            s.ensure_free_norm_at(t_eval);
-            let mut ystage_prop = s.ystage.clone();
-            apply_prop_cached(
-                &mut ystage_prop,
-                &s.linop,
-                dt_prop,
-                &mut s.exp_cache,
-                s.linop_version,
-            );
-            if s.is_real {
-                s.rhs_free(stage_idx, &ystage_prop);
+        self.eval_stage_from_ystage(stage_idx, t_eval, dt_prop);
+    }
+
+    /// Dispatch one already-propagated field to the configured nonlinear RHS.
+    /// Keeping this selection in one place prevents the ordinary, dense-output,
+    /// and stage-0 paths from drifting apart.
+    fn dispatch_rhs(&mut self, stage_idx: usize, input: &[Complex<f64>]) {
+        if self.is_free {
+            if self.is_real {
+                self.rhs_free(stage_idx, input);
             } else {
-                s.rhs_free_env(stage_idx, &ystage_prop);
+                self.rhs_free_env(stage_idx, input);
             }
-            apply_prop_cached(
-                &mut s.ks[stage_idx],
-                &s.linop,
-                -dt_prop,
-                &mut s.exp_cache,
-                s.linop_version,
-            );
-        } else if s.is_modal {
-            s.ensure_linop_at(t_eval);
-            s.ensure_modal_linop_at(t_eval);
-            let mut ystage_prop = s.ystage.clone();
-            apply_prop_cached(
-                &mut ystage_prop,
-                &s.linop,
-                dt_prop,
-                &mut s.exp_cache,
-                s.linop_version,
-            );
-            s.rhs_modal(stage_idx, &ystage_prop);
-            apply_prop_cached(
-                &mut s.ks[stage_idx],
-                &s.linop,
-                -dt_prop,
-                &mut s.exp_cache,
-                s.linop_version,
-            );
-        } else if s.is_radial {
-            s.ensure_linop_at(t_eval);
-            let mut ystage_prop = s.ystage.clone();
-            apply_prop_cached(
-                &mut ystage_prop,
-                &s.linop,
-                dt_prop,
-                &mut s.exp_cache,
-                s.linop_version,
-            );
-            if s.is_real {
-                s.rhs_radial(stage_idx, &ystage_prop);
+        } else if self.is_modal {
+            self.rhs_modal(stage_idx, input);
+        } else if self.is_radial {
+            if self.is_real {
+                self.rhs_radial(stage_idx, input);
             } else {
-                s.rhs_radial_env(stage_idx, &ystage_prop);
+                self.rhs_radial_env(stage_idx, input);
             }
-            apply_prop_cached(
-                &mut s.ks[stage_idx],
-                &s.linop,
-                -dt_prop,
-                &mut s.exp_cache,
-                s.linop_version,
-            );
-        } else if s.n_time_over > 0 && (s.fft_r2c_over.is_some() || s.fft_c2c_over.is_some()) {
-            s.ensure_linop_at(t_eval);
-            let mut ystage_prop = s.ystage.clone();
-            apply_prop_cached(
-                &mut ystage_prop,
-                &s.linop,
-                dt_prop,
-                &mut s.exp_cache,
-                s.linop_version,
-            );
-            if s.is_real {
-                s.rhs_mode_avg_real(stage_idx, &ystage_prop);
+        } else if self.n_time_over > 0
+            && (self.fft_r2c_over.is_some() || self.fft_c2c_over.is_some())
+        {
+            if self.is_real {
+                self.rhs_mode_avg_real(stage_idx, input);
             } else {
-                s.rhs_mode_avg_env(stage_idx, &ystage_prop);
+                self.rhs_mode_avg_env(stage_idx, input);
             }
-            apply_prop_cached(
-                &mut s.ks[stage_idx],
-                &s.linop,
-                -dt_prop,
-                &mut s.exp_cache,
-                s.linop_version,
-            );
         } else {
-            for k in 0..s.n {
-                s.ks[stage_idx][k] = Complex::new(0.0, 0.0);
-            }
+            self.ks[stage_idx].fill(Complex::new(0.0, 0.0));
+        }
+    }
+
+    /// Evaluate a stage without cloning the full field. `ystage` is temporary
+    /// scratch and the next stage overwrites every element, so retaining its
+    /// propagated contents is harmless. The catch/restore/resume sequence is
+    /// important: the public FFI catches panics, and the resident handle must
+    /// remain structurally usable after one is contained.
+    fn eval_stage_from_ystage(&mut self, stage_idx: usize, t_eval: f64, dt_prop: f64) {
+        self.ensure_linop_at(t_eval);
+        if self.is_free {
+            self.ensure_free_norm_at(t_eval);
+        } else if self.is_modal {
+            self.ensure_modal_linop_at(t_eval);
+        }
+
+        let mut input = std::mem::take(&mut self.ystage);
+        apply_prop_cached(
+            &mut input,
+            &self.linop,
+            dt_prop,
+            &mut self.exp_cache,
+            self.linop_version,
+        );
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.dispatch_rhs(stage_idx, &input);
+        }));
+        self.ystage = input;
+        if let Err(payload) = result {
+            std::panic::resume_unwind(payload);
+        }
+        apply_prop_cached(
+            &mut self.ks[stage_idx],
+            &self.linop,
+            -dt_prop,
+            &mut self.exp_cache,
+            self.linop_version,
+        );
+    }
+
+    /// Stage-0 counterpart of `eval_stage_from_ystage`: temporarily move the
+    /// resident field out so RHS evaluation can borrow the rest of the
+    /// simulation mutably without allocating a duplicate field.
+    fn eval_field_stage_zero(&mut self) {
+        let input = std::mem::take(&mut self.field);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.dispatch_rhs(0, &input);
+        }));
+        self.field = input;
+        if let Err(payload) = result {
+            std::panic::resume_unwind(payload);
         }
     }
 
@@ -3634,9 +3622,14 @@ pub trait NativeBackend {
     /// multiple sims/tests coexisting in one process never contend over a
     /// single global configuration.
     unsafe fn set_threads(&mut self, n: size_t) -> i32;
-    /// docs/dev/BACKLOG.md S5.2: forces the QDHT BLAS-3 `dgemm` path (opt-in via
-    /// `AMALTHEA_QDHT_BLAS`) to be skipped in favor of the row-parallel Rayon
-    /// fallback, regardless of whether a BLAS library was loaded.
+    /// Select the QDHT kernel for backends that own a radial transform:
+    /// `0` Rayon, `1` automatic threshold, `2` configured BLAS. Backends
+    /// without a CPU QDHT accept and ignore this policy.
+    unsafe fn set_qdht_blas_mode(&mut self, mode: c_int) -> i32 {
+        if (0..=2).contains(&mode) { 0 } else { -1 }
+    }
+    /// Forces the QDHT BLAS-3 `dgemm` path to be skipped in favor of the
+    /// row-parallel Rayon fallback, regardless of the configured policy.
     ///
     /// **What this actually guards against:** the default native path is
     /// already run-to-run deterministic on one machine — every other
@@ -3646,17 +3639,10 @@ pub trait NativeBackend {
     /// independently, no cross-thread reduction), and FFTW native plans
     /// only ever use `FFTW_ESTIMATE`, so thread count and repeated runs
     /// don't change the result even with `deterministic=false`. The one
-    /// real lever this flag has is `BLAS_API`: it's a process-global
-    /// `OnceLock`, populated once (if ever) by the per-kernel
-    /// `AMALTHEA_USE_RUST_QDHT`+`AMALTHEA_QDHT_BLAS` path, and once populated it
-    /// silently makes *every later* native-path QDHT call in that process
-    /// eligible for the BLAS-3 route too. `deterministic=true` is what
-    /// makes that eligibility **invariant to whether some other part of
-    /// the process happened to touch BLAS**, and to which BLAS
-    /// implementation/thread-count is linked — it is not claiming a
-    /// same-process, same-BLAS-state run is otherwise non-reproducible
-    /// (at the problem sizes here, a single-threaded/sub-threshold BLAS
-    /// call is itself almost certainly repeat-run stable). Does **not**
+    /// real lever this flag has is selecting the fixed-order QDHT kernel
+    /// instead of Julia's configured BLAS provider. BLAS is initialized
+    /// directly during resident radial construction, so behavior no longer
+    /// depends on whether a legacy QDHT handle was constructed first. Does **not**
     /// guarantee bit-identical results across different machines/CPU
     /// targets (the crate is built with `target-cpu=native`, so a
     /// different build host takes a different SIMD/libm path).
@@ -3701,32 +3687,7 @@ impl NativeBackend for CpuNativeSim {
         }
         let src = unsafe { std::slice::from_raw_parts(data as *const Complex<f64>, n) };
         sim.field.copy_from_slice(src);
-
-        if sim.is_free {
-            let field = sim.field.clone();
-            if sim.is_real {
-                sim.rhs_free(0, &field);
-            } else {
-                sim.rhs_free_env(0, &field);
-            }
-        } else if sim.is_modal {
-            let field = sim.field.clone();
-            sim.rhs_modal(0, &field);
-        } else if sim.is_radial {
-            let field = sim.field.clone();
-            if sim.is_real {
-                sim.rhs_radial(0, &field);
-            } else {
-                sim.rhs_radial_env(0, &field);
-            }
-        } else if !sim.beta.is_empty() {
-            let field = sim.field.clone();
-            if sim.is_real {
-                sim.rhs_mode_avg_real(0, &field);
-            } else {
-                sim.rhs_mode_avg_env(0, &field);
-            }
-        }
+        sim.eval_field_stage_zero();
         // `ks[0]` was just recomputed from scratch for the new initial
         // condition, so any FSAL carry still owed from a previous accepted
         // step is stale and must not overwrite it at the next `step`.
@@ -3962,6 +3923,15 @@ impl NativeBackend for CpuNativeSim {
             // Drop any existing pool so it's rebuilt lazily (correct size)
             // the next time a parallel seam actually runs.
             sim.thread_pool = None;
+        }
+        0
+    }
+    unsafe fn set_qdht_blas_mode(&mut self, mode: c_int) -> i32 {
+        if !(0..=2).contains(&mode) {
+            return -1;
+        }
+        if let Some(ref mut qdht) = self.qdht {
+            qdht.set_blas_mode(mode as u8);
         }
         0
     }
@@ -5050,101 +5020,16 @@ impl NativeBackend for CpuNativeSim {
                 s.ystage[idx] = Complex::new(re, im);
             }
 
-            if s.is_free {
-                let dt_prop = DP_NODES[ii] * dt;
-                s.ensure_linop_at(t + dt_prop);
-                s.ensure_free_norm_at(t + dt_prop);
-                let mut ystage_prop = s.ystage.clone();
-                apply_prop_cached(
-                    &mut ystage_prop,
-                    &s.linop,
-                    dt_prop,
-                    &mut s.exp_cache,
-                    s.linop_version,
-                );
-                if s.is_real {
-                    s.rhs_free(ii + 1, &ystage_prop);
-                } else {
-                    s.rhs_free_env(ii + 1, &ystage_prop);
-                }
-                apply_prop_cached(
-                    &mut s.ks[ii + 1],
-                    &s.linop,
-                    -dt_prop,
-                    &mut s.exp_cache,
-                    s.linop_version,
-                );
-            } else if s.is_modal {
-                let dt_prop = DP_NODES[ii] * dt;
-                s.ensure_linop_at(t + dt_prop);
-                s.ensure_modal_linop_at(t + dt_prop);
-                let mut ystage_prop = s.ystage.clone();
-                apply_prop_cached(
-                    &mut ystage_prop,
-                    &s.linop,
-                    dt_prop,
-                    &mut s.exp_cache,
-                    s.linop_version,
-                );
-                s.rhs_modal(ii + 1, &ystage_prop);
-                apply_prop_cached(
-                    &mut s.ks[ii + 1],
-                    &s.linop,
-                    -dt_prop,
-                    &mut s.exp_cache,
-                    s.linop_version,
-                );
-            } else if s.is_radial {
-                let dt_prop = DP_NODES[ii] * dt;
-                s.ensure_linop_at(t + dt_prop);
-                let mut ystage_prop = s.ystage.clone();
-                apply_prop_cached(
-                    &mut ystage_prop,
-                    &s.linop,
-                    dt_prop,
-                    &mut s.exp_cache,
-                    s.linop_version,
-                );
-                if s.is_real {
-                    s.rhs_radial(ii + 1, &ystage_prop);
-                } else {
-                    s.rhs_radial_env(ii + 1, &ystage_prop);
-                }
-                apply_prop_cached(
-                    &mut s.ks[ii + 1],
-                    &s.linop,
-                    -dt_prop,
-                    &mut s.exp_cache,
-                    s.linop_version,
-                );
-            } else if s.n_time_over > 0 && (s.fft_r2c_over.is_some() || s.fft_c2c_over.is_some()) {
-                let dt_prop = DP_NODES[ii] * dt;
-                s.ensure_linop_at(t + dt_prop);
-                let mut ystage_prop = s.ystage.clone();
-                apply_prop_cached(
-                    &mut ystage_prop,
-                    &s.linop,
-                    dt_prop,
-                    &mut s.exp_cache,
-                    s.linop_version,
-                );
-                if s.is_real {
-                    s.rhs_mode_avg_real(ii + 1, &ystage_prop);
-                } else {
-                    s.rhs_mode_avg_env(ii + 1, &ystage_prop);
-                }
-                apply_prop_cached(
-                    &mut s.ks[ii + 1],
-                    &s.linop,
-                    -dt_prop,
-                    &mut s.exp_cache,
-                    s.linop_version,
-                );
-            } else {
-                for k in 0..n {
-                    s.ks[ii + 1][k] = Complex::new(0.0, 0.0);
-                }
+            // With local extrapolation disabled Julia returns the final
+            // *unpropagated* internal stage. Ownership-based RHS dispatch
+            // propagates `ystage` in place, so preserve that one observable
+            // stage directly in the caller's output buffer before stage 7.
+            if ii == 5 && locextrap == 0 {
+                yn_sl.copy_from_slice(&s.ystage);
             }
+
+            let dt_prop = DP_NODES[ii] * dt;
+            s.eval_stage_from_ystage(ii + 1, t + dt_prop, dt_prop);
         }
 
         if locextrap != 0 {
@@ -5194,10 +5079,10 @@ impl NativeBackend for CpuNativeSim {
             }
         } else {
             // Match Julia's `PreconStepper`: without local extrapolation the
-            // final internal RK stage is the trial solution. `s.ystage` still
-            // holds that stage after the loop; `yn_sl` otherwise still holds
-            // the old resident field copied at entry.
-            yn_sl.copy_from_slice(&s.ystage);
+            // final unpropagated internal RK stage is the trial solution. It
+            // was copied into `yn_sl` immediately before the final RHS call,
+            // because `eval_stage_from_ystage` now propagates its owned
+            // scratch in place to avoid allocating a clone.
         }
 
         // Error estimate
@@ -5711,6 +5596,17 @@ pub unsafe extern "C" fn native_set_threads(sim: *mut NativeSim, n: size_t) -> i
     }
     let s = unsafe { &mut *sim };
     unsafe { s.backend.set_threads(n) }
+}
+
+/// Select resident radial QDHT execution: `0` forces Rayon, `1` uses the
+/// measured automatic threshold, and `2` forces configured BLAS when loaded.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn native_set_qdht_blas_mode(sim: *mut NativeSim, mode: c_int) -> i32 {
+    if sim.is_null() {
+        return -1;
+    }
+    let s = unsafe { &mut *sim };
+    unsafe { s.backend.set_qdht_blas_mode(mode) }
 }
 
 /// Enables/disables deterministic mode — docs/dev/BACKLOG.md S5.2. `on != 0` skips
