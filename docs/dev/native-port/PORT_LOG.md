@@ -4971,3 +4971,40 @@ authoritative local Rust/Julia/documentation results and unchanged tolerances.
 **Next:** Commit and push the candidate metadata/evidence, inspect every hosted
 job, run the Apple quick diagnostic on M-series hardware, implement and
 validate the coordinated DOPRI correction, then repeat the full release gate.
+
+## 2026-08-25 — Candidate integration, upstream issue response, and branch cleanup — Codex (GPT-5)
+**Status:** completed; optimization candidate integrated into `main`, while
+v1.0.4 remains unreleased and upstream issue #67 remains open for DOPRI.
+**Did:** Verified Actions run `32731757039` succeeded at candidate commit
+`b93e5ae` across all 16 substantive jobs. Answered GitHub issue #67 with the
+per-commit upstream disposition and kept it open because `1d7e4c3` is not yet
+ported. Fast-forwarded `main` from `73e32dc` to `b93e5ae` and pushed it. Deleted
+the now-merged remote branches `codex/cpu-apple-concurrency-optimization`,
+`gpu-plans-12-21-review`, and `release/1.0.3`; deleted those local branches plus
+the local-only `install-arm-cpu-only`. Preserved `gh-pages` and every upstream
+or upstream-fork branch because they are deployment/external scope, not unused
+Amalthea feature branches.
+**How:** Proved every cleanup target was an ancestor of `main` with
+`git merge-base --is-ancestor` before deletion. The optimization branch was a
+strict two-commit fast-forward (`git rev-list --left-right --count` returned
+`0 2`), so integration introduced no merge conflict or new tree content.
+Issue response: https://github.com/vdiego28/Amalthea.jl/issues/67#issuecomment-5410506012
+**Decisions:** Do not close issue #67 merely because triage is complete: its
+active DOPRI correction remains a known cross-backend correctness gap. Do not
+tag or publish v1.0.4; integration into the development branch does not waive
+the DOPRI, Apple, final-metadata, or exact-final-commit test gates. Delete only
+branches whose complete history is reachable from `main`.
+**Gotchas:** GitHub's default repository inferred by `gh` can follow the
+`upstream` remote in this multi-remote checkout; every mutation used explicit
+repository `vdiego28/Amalthea.jl`. The main push starts a new hosted run for
+the same tested tree; this documentation entry creates one further main commit
+that must also pass before release.
+**Tests:** Hosted run `32731757039` passed Linux/macOS/Windows physics and Rust,
+Julia LTS/current/pre-release, sim-interface, sim-multimode, sim-propagation,
+I/O, fields, examples, Python integration, native benchmark, and Linux AArch64
+install/FFI. `main...candidate` was `0 2`; all four deleted local tips and all
+three deleted remote tips were ancestors of the resulting `main`.
+**Next:** Push this documentation-only handoff and inspect its Actions run.
+Then implement the coordinated DOPRI correction on a fresh branch, run the real
+Apple quick diagnostic, finalize v1.0.4 public metadata, and repeat the exact
+release gate before tagging.
