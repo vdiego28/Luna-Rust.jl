@@ -42,6 +42,10 @@ CPU performance, Apple Silicon, and concurrency update for the native backend.
   archived release files.
 
 ### Fixed
+- Corrected the Dormand--Prince propagated solution across Julia, legacy Rust,
+  resident CPU, and CUDA steppers: the default is now the true fifth-order
+  rule and `locextrap=false` explicitly selects the embedded fourth-order
+  rule instead of retaining a post-RHS internal stage.
 - Removed Rust stage-field clones while preserving rejected-step,
   `locextrap=false`, dense-output, callback-window, and panic-restoration
   semantics.

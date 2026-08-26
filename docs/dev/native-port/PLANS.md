@@ -2558,17 +2558,13 @@ fallback. A regression must use a state where `maxnorm` accepts near
 `err=0.897` while `weaknorm` rejects near `err=1.181`, proving the fallback is
 behavioral rather than a type-only assertion.
 
-With `locextrap=false`, Julia advances with the final internal RK stage left by
-`evaluate!` (the `B[6] == b4[1:6]` fourth-order solution). The legacy Rust
-callback stepper instead left the caller's old `yn`; CPU resident started
-`yn` from `field`; CUDA overwrote its dead stage buffer with `field`. The
-repair preserves the final stage and uses it as the trial on all three Rust
-paths: copy
-`PreconStepFfiHandle.y_stage` to legacy `yn`, copy `CpuNativeSim.ystage` to
-resident `yn`, and retain CUDA's final `ystage_d` rather than reseeding it.
-`locextrap=true` continues to form the existing `b5` trial. In both modes the
-error norm is evaluated against the actual trial, rejection restores the old
-field, and acceptance applies the final interaction-picture propagator.
+**Superseded by §17 (2026-08-26).** This campaign had the DOPRI weight names
+reversed: the final Butcher row is the propagated fifth-order solution, while
+the `5179/57600, …, 1/40` vector is the embedded fourth-order estimate. A
+post-RHS stage is not a solution in either mode. Every backend now explicitly
+forms `b5` for `locextrap=true` and `b4` for `locextrap=false`; the error is
+`b4 - b5`. The earlier stage-preservation description is historical only and
+must not be copied into new code.
 
 Tests cover direct legacy/resident constructors, `solve_precon` dispatch,
 accepted and rejected steps, one-step equivalence, and a fixed-step multi-step
@@ -3137,3 +3133,35 @@ upstream DOPRI weight-vector defect recorded in `UPSTREAM_TRIAGE.md`. That
 defect must be corrected consistently in Julia, legacy Rust, resident CPU, and
 CUDA, with order/FSAL/endpoint tests that do not rely on backend equivalence
 against the same mistaken coefficients.
+
+## 17. Dormand–Prince propagated-solution correction
+
+Status: **designed 2026-08-26; implementation and validation in progress.**
+
+Upstream Luna commit `1d7e4c3` establishes that the historical `dopri.jl`
+names were reversed: `[35/384, 0, 500/1113, 125/192, -2187/6784, 11/84, 0]`
+is the fifth-order DOPRI5 weight vector, while
+`[5179/57600, 0, 7571/16695, 393/640, -92097/339200, 187/2100, 1/40]` is the
+embedded fourth-order vector. The default `locextrap=true` therefore currently
+propagates the lower-order state in Julia, the legacy callback Rust stepper,
+the resident CPU backend, and CUDA. Their mutual equivalence cannot expose the
+shared error.
+
+The correction names these vectors `b5`/`DP_B5` and `b4`/`DP_B4` consistently,
+retains the numerical error vector as `b4 - b5`, and forms
+`yn = y + dt*Σ(bpropᵢ*kᵢ)` explicitly in every backend, choosing `b5` when
+`locextrap=true` and `b4` otherwise. No propagation path may retain a final
+internal stage as an accidental false-mode result. This makes DOPRI5 FSAL
+exact—stage 7 is evaluated at the accepted fifth-order endpoint—and makes the
+free quartic dense polynomial reproduce that endpoint. Deferred k7→k1 carry
+remains unchanged, preserving the completed interval's genuine k1 for dense
+output.
+
+Independent tests use exact rational order conditions, the analytic exponential
+ODE at two fixed step sizes, direct FSAL evaluation, and direct quartic
+endpoint reconstruction. They require fifth-order convergence with default
+local extrapolation, fourth-order convergence when disabled, and an endpoint
+residual below `1e-12` for the fifth-order branch. Julia/legacy Rust/resident
+CPU/CUDA tests then verify parity, rejected-step restoration, dense output, and
+multi-step FSAL behavior without treating parity as the physics oracle. CUDA
+execution remains subject to the real-device procedure in `AGENTS.md`.

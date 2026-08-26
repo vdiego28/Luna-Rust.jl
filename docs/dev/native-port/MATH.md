@@ -67,7 +67,12 @@ Standard Dormand-Prince 5(4) (7 stages, the coefficients live in
 
 - **FSAL** (First Same As Last): stage 7 of the accepted step is stage 1 of the
   next — one RHS evaluation per step is reused, not recomputed.
-- **Embedded 4th-order** solution gives the error estimate `yerr = y5 - y4`.
+- **Propagated solution:** default `locextrap=true` advances the fifth-order
+  DOPRI5 state; `locextrap=false` advances the embedded fourth-order state.
+  Both are formed explicitly from their respective weights rather than relying
+  on a residual stage buffer. The error vector is `yerr = y4 - y5` (the sign
+  is immaterial to the norm but its fixed coefficient values are shared by all
+  backends).
 - **Dense output**: the current default is the
   Calvo–Montijano–Rández order-5 continuous extension. It evaluates extra
   stages lazily for an interval that is actually sampled

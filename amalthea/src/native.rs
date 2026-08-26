@@ -5020,26 +5020,21 @@ impl NativeBackend for CpuNativeSim {
                 s.ystage[idx] = Complex::new(re, im);
             }
 
-            // With local extrapolation disabled Julia returns the final
-            // *unpropagated* internal stage. Ownership-based RHS dispatch
-            // propagates `ystage` in place, so preserve that one observable
-            // stage directly in the caller's output buffer before stage 7.
-            if ii == 5 && locextrap == 0 {
-                yn_sl.copy_from_slice(&s.ystage);
-            }
-
             let dt_prop = DP_NODES[ii] * dt;
             s.eval_stage_from_ystage(ii + 1, t + dt_prop, dt_prop);
         }
 
-        if locextrap != 0 {
-            let b0 = dt * DP_B5[0];
-            let b1 = dt * DP_B5[1];
-            let b2 = dt * DP_B5[2];
-            let b3 = dt * DP_B5[3];
-            let b4 = dt * DP_B5[4];
-            let b5 = dt * DP_B5[5];
-            let b6 = dt * DP_B5[6];
+        // Form the trial explicitly for both modes. A stage that has passed
+        // through the nonlinear RHS is not itself an RK solution.
+        let bprop = if locextrap != 0 { DP_B5 } else { DP_B4 };
+        {
+            let b0 = dt * bprop[0];
+            let b1 = dt * bprop[1];
+            let b2 = dt * bprop[2];
+            let b3 = dt * bprop[3];
+            let b4 = dt * bprop[4];
+            let b5 = dt * bprop[5];
+            let b6 = dt * bprop[6];
 
             let (ks_slice, _) = s.ks.split_at(7);
             let (ks0, ks1, ks2, ks3, ks4, ks5, ks6) = (
@@ -5077,12 +5072,6 @@ impl NativeBackend for CpuNativeSim {
                     + b5 * k5.im
                     + b6 * k6.im;
             }
-        } else {
-            // Match Julia's `PreconStepper`: without local extrapolation the
-            // final unpropagated internal RK stage is the trial solution. It
-            // was copied into `yn_sl` immediately before the final RHS call,
-            // because `eval_stage_from_ystage` now propagates its owned
-            // scratch in place to avoid allocating a clone.
         }
 
         // Error estimate
@@ -6415,7 +6404,18 @@ pub const DP_B: [[f64; 6]; 6] = [
         11.0 / 84.0,
     ],
 ];
+/// Propagated fifth-order Dormand--Prince solution.
 pub const DP_B5: [f64; 7] = [
+    35.0 / 384.0,
+    0.0,
+    500.0 / 1113.0,
+    125.0 / 192.0,
+    -2187.0 / 6784.0,
+    11.0 / 84.0,
+    0.0,
+];
+/// Embedded fourth-order solution, selected when local extrapolation is off.
+pub const DP_B4: [f64; 7] = [
     5179.0 / 57600.0,
     0.0,
     7571.0 / 16695.0,

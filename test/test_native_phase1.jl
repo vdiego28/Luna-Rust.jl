@@ -63,7 +63,7 @@ using TestItems
             @test rel_step < 1e-13
         end
 
-        @testset "locextrap=false preserves the final internal stage" begin
+        @testset "locextrap=false propagates the embedded fourth-order state" begin
             false_kw = (; rtol=1e-6, atol=1e-10, locextrap=false)
             s_jl = PreconStepper(transform, linop, copy(Eω), t0, dt; false_kw...)
             s_ru = RustNativeStepper(transform, linop, copy(Eω), t0, dt; false_kw...)
@@ -76,7 +76,7 @@ using TestItems
             @test isapprox(s_ru.err, s_jl.err; rtol=1e-11)
             @test isapprox(s_ru.dtn, s_jl.dtn; rtol=1e-11)
             @test norm(s_ru.yn - s_jl.yn) / norm(s_jl.yn) < 1e-13
-            # The two embedded candidates differ materially at this step size;
+            # The fourth- and fifth-order candidates differ materially at this step size;
             # without this check a backend that ignored `locextrap` could pass.
             @test norm(s_jl.yn - s_true.yn) / norm(s_jl.yn) > 1e-12
 

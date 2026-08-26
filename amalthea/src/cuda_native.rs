@@ -6237,16 +6237,6 @@ impl NativeBackend for CudaNativeSim {
                         &format!("rk45_accumulate_stage(ii={ii})"),
                     )?;
 
-                    // `compute_rhs_mode_avg` below propagates `ystage_d` in
-                    // place. When local extrapolation is disabled, preserve
-                    // the final interaction-picture stage before that
-                    // transform so it can become the trial state. `yerr_d`
-                    // is still dead here and is overwritten by the error
-                    // kernel immediately after the stage loop.
-                    if _locextrap == 0 && ii == 5 {
-                        self.yerr_d.copy_from_device(&self.ystage_d)?;
-                    }
-
                     // TODO: Z-Dependent Linear Operator: recalculate `linop_d` at `t + dt_prop` for tapered fibers.
                     // Currently assuming `linop_d` is static across the step.
 
@@ -6298,10 +6288,6 @@ impl NativeBackend for CudaNativeSim {
                     )?;
                 }
 
-                if _locextrap == 0 {
-                    self.ystage_d.copy_from_device(&self.yerr_d)?;
-                }
-
                 // Error accumulation
                 let mut e = crate::native::DP_ERREST;
                 let mut rk_err_args: [*mut libc::c_void; 17] = [
@@ -6333,15 +6319,20 @@ impl NativeBackend for CudaNativeSim {
                     "rk45_accumulate_error",
                 )?;
 
-                // Form the genuine fifth-order trial state *before* the
-                // acceptance decision, exactly like CpuNativeSim::step.
+                // Form the DP trial state explicitly before acceptance,
+                // exactly like CpuNativeSim::step. The final internal stage
+                // has passed through the RHS and is not an RK solution.
                 // `ystage_d` is dead after the seven RK stages, so it doubles
                 // as a transactional trial buffer: rejection leaves
                 // `field_d` untouched; acceptance propagates and swaps this
                 // buffer into the resident field.
-                if _locextrap != 0 {
+                {
                     self.ystage_d.copy_from_device(&self.field_d)?;
-                    let mut b5 = crate::native::DP_B5;
+                    let mut bprop = if _locextrap != 0 {
+                        crate::native::DP_B5
+                    } else {
+                        crate::native::DP_B4
+                    };
                     let mut trial_args: [*mut libc::c_void; 18] = [
                         &mut self.ystage_d.dptr as *mut _ as *mut _,
                         &mut self.field_d.dptr as *mut _ as *mut _,
@@ -6352,13 +6343,13 @@ impl NativeBackend for CudaNativeSim {
                         &mut self.ks_d[4].dptr as *mut _ as *mut _,
                         &mut self.ks_d[5].dptr as *mut _ as *mut _,
                         &mut self.ks_d[6].dptr as *mut _ as *mut _,
-                        &mut b5[0] as *mut _ as *mut _,
-                        &mut b5[1] as *mut _ as *mut _,
-                        &mut b5[2] as *mut _ as *mut _,
-                        &mut b5[3] as *mut _ as *mut _,
-                        &mut b5[4] as *mut _ as *mut _,
-                        &mut b5[5] as *mut _ as *mut _,
-                        &mut b5[6] as *mut _ as *mut _,
+                        &mut bprop[0] as *mut _ as *mut _,
+                        &mut bprop[1] as *mut _ as *mut _,
+                        &mut bprop[2] as *mut _ as *mut _,
+                        &mut bprop[3] as *mut _ as *mut _,
+                        &mut bprop[4] as *mut _ as *mut _,
+                        &mut bprop[5] as *mut _ as *mut _,
+                        &mut bprop[6] as *mut _ as *mut _,
                         &mut self.n as *mut _ as *mut _,
                         &mut dt as *mut _ as *mut _,
                     ];
@@ -6372,10 +6363,6 @@ impl NativeBackend for CudaNativeSim {
                         "rk45_accumulate_stage(trial)",
                     )?;
                 }
-                // With local extrapolation disabled, the stage loop already
-                // left the final internal RK stage in `ystage_d`. Retain it
-                // as the transactional trial instead of replacing it with
-                // the old `field_d`; this mirrors Julia and the CPU backend.
 
                 // Emit the three squared-magnitude arrays required by
                 // native.rs::weaknorm_c64. The former kernel used an

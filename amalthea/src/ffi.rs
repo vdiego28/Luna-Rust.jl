@@ -1076,7 +1076,18 @@ const DP_B: [[f64; 6]; 6] = [
     ],
 ];
 const DP_NODES: [f64; 6] = [1.0 / 5.0, 3.0 / 10.0, 4.0 / 5.0, 8.0 / 9.0, 1.0, 1.0];
+// Propagated fifth-order Dormand--Prince solution.
 const DP_B5: [f64; 7] = [
+    35.0 / 384.0,
+    0.0,
+    500.0 / 1113.0,
+    125.0 / 192.0,
+    -2187.0 / 6784.0,
+    11.0 / 84.0,
+    0.0,
+];
+// Embedded fourth-order solution, selected when local extrapolation is off.
+const DP_B4: [f64; 7] = [
     5179.0 / 57600.0,
     0.0,
     7571.0 / 16695.0,
@@ -1085,7 +1096,7 @@ const DP_B5: [f64; 7] = [
     187.0 / 2100.0,
     1.0 / 40.0,
 ];
-// errest = b5 - b4
+// errest = b4 - b5
 const DP_ERREST: [f64; 7] = [
     -71.0 / 57600.0,
     0.0,
@@ -1197,7 +1208,7 @@ pub unsafe extern "C" fn free_precon_step_ffi(ptr: *mut PreconStepFfiHandle) {
 /// # Arguments
 /// * `ptr`         – handle from [`init_precon_step_ffi`]
 /// * `y`           – Julia's `s.y` (length-`n` `Complex<f64>`); overwritten with `s.yn`
-/// * `yn`          – Julia's `s.yn`; holds 5th-order solution on return
+/// * `yn`          – Julia's `s.yn`; holds the selected DP solution on return
 /// * `k_ptrs`      – 7-element array of `*mut Complex<f64>` (Julia's `s.ks[1..7]`)
 /// * `n`           – array length (number of complex elements)
 /// * `t_old`       – `s.t` before this call
@@ -1205,7 +1216,7 @@ pub unsafe extern "C" fn free_precon_step_ffi(ptr: *mut PreconStepFfiHandle) {
 /// * `dtn`         – proposed step size
 /// * `rtol`, `atol`, `safety`, `max_dt`, `min_dt` – stepper tolerances
 /// * `errlast_in`  – `s.errlast` from previous accepted step (0 on first step)
-/// * `locextrap`   – non-zero → use 5th-order `yn` (always true in Luna)
+/// * `locextrap`   – non-zero → propagated fifth-order; zero → embedded fourth-order
 /// * `fbar_fn`, `prop_fn`, `userdata` – Julia callbacks
 /// * `result`      – output struct (filled on success)
 ///
@@ -1345,27 +1356,21 @@ unsafe fn precon_step_inner(
             );
         }
 
-        // ── 5th-order yn (locextrap) ──────────────────────────────────────────────
-        if locextrap != 0 {
-            std::ptr::copy_nonoverlapping(y, yn, n);
-            for jj in 0..7usize {
-                let b = DP_B5[jj];
-                if b != 0.0 {
-                    let scale = dt * b;
-                    for k in 0..n {
-                        let ks_k = *ks[jj].add(k);
-                        (*yn.add(k)).re += scale * ks_k.re;
-                        (*yn.add(k)).im += scale * ks_k.im;
-                    }
+        // ── Explicit DP trial state ───────────────────────────────────────────────
+        // A stage that has passed through the RHS is not an RK solution.
+        // `locextrap=false` selects the embedded fourth-order state.
+        let bprop = if locextrap != 0 { &DP_B5 } else { &DP_B4 };
+        std::ptr::copy_nonoverlapping(y, yn, n);
+        for jj in 0..7usize {
+            let b = bprop[jj];
+            if b != 0.0 {
+                let scale = dt * b;
+                for k in 0..n {
+                    let ks_k = *ks[jj].add(k);
+                    (*yn.add(k)).re += scale * ks_k.re;
+                    (*yn.add(k)).im += scale * ks_k.im;
                 }
             }
-        } else {
-            // Julia's `evaluate!(::PreconStepper)` leaves `s.yn` holding
-            // the final internal RK stage when local extrapolation is off.
-            // `h.y_stage` is that stage after the loop above; retaining the
-            // caller's old `yn` here would evaluate the error against, and
-            // potentially accept, the wrong trial state.
-            std::ptr::copy_nonoverlapping(h.y_stage.as_ptr(), yn, n);
         }
 
         // ── error estimate ────────────────────────────────────────────────────────

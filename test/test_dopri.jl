@@ -2,7 +2,7 @@ using TestItems
 
 @testitem "dopri" tags=[:physics] begin
     import Amalthea: RK45
-    import Test: @test
+    import Test: @test, @testset
 
     # Consistency properties of coefficients
     for i in 1:6
@@ -11,7 +11,78 @@ using TestItems
 
     @test isapprox(sum(RK45.b5), 1.0)
     @test isapprox(sum(RK45.b4), 1.0)
-    @test RK45.errest == RK45.b5 .- RK45.b4
+    @test RK45.errest == RK45.b4 .- RK45.b5
+
+    @testset "DP5(4) propagated and embedded weights" begin
+        # Keep this oracle independent of the Float64 tableau in the solver.
+        c = Rational{Int}[0, 1//5, 3//10, 4//5, 8//9, 1, 1]
+        b5 = Rational{Int}[35//384, 0, 500//1113, 125//192,
+                            -2187//6784, 11//84, 0]
+        b4 = Rational{Int}[5179//57600, 0, 7571//16695, 393//640,
+                            -92097//339200, 187//2100, 1//40]
+
+        @test RK45.b5 == Float64.(b5)
+        @test RK45.b4 == Float64.(b4)
+        @test RK45.errest ≈ Float64.(b4 .- b5) rtol=0 atol=2eps()
+        @test RK45.b5[1:6] == RK45.B[6]
+        @test RK45.b5[7] == 0
+        @test vec(sum(RK45.interpC, dims=1)) ≈ RK45.b5 rtol=0 atol=8eps()
+
+        # A Runge--Kutta rule of order p integrates c^q exactly through q=p-1.
+        for q in 0:4
+            @test sum(b5 .* c.^q) == 1//(q + 1)
+        end
+        for q in 0:3
+            @test sum(b4 .* c.^q) == 1//(q + 1)
+        end
+        @test sum(b4 .* c.^4) != 1//5
+    end
+
+    @testset "propagated order, FSAL, and false-mode trial" begin
+        f_exp! = (out, y, _) -> (out .= y)
+
+        function fixed_exp(dt; locextrap)
+            s = RK45.Stepper(f_exp!, [1.0], 0.0, dt;
+                              rtol=1e6, atol=0.0, min_dt=dt, max_dt=dt,
+                              locextrap=locextrap)
+            for _ in 1:round(Int, 1 / dt)
+                @test RK45.step!(s)
+            end
+            return abs(s.yn[1] - exp(1)), s
+        end
+
+        e5_h, s5 = fixed_exp(1/8; locextrap=true)
+        e5_h2, _ = fixed_exp(1/16; locextrap=true)
+        e4_h, s4 = fixed_exp(1/8; locextrap=false)
+        e4_h2, _ = fixed_exp(1/16; locextrap=false)
+        @test 4.7 < log2(e5_h / e5_h2) < 5.3
+        @test 3.7 < log2(e4_h / e4_h2) < 4.3
+
+        # The final stage is FSAL only for the propagated fifth-order state.
+        endpoint_rhs = similar(s5.yn)
+        f_exp!(endpoint_rhs, s5.yn, s5.tn)
+        @test s5.ks[end] ≈ endpoint_rhs rtol=1e-13 atol=1e-14
+
+        # The free quartic extension must reach the same DP5 endpoint at σ=1.
+        b_endpoint = vec(sum(RK45.interpC, dims=1))
+        quartic_endpoint = copy(s5.y)
+        for i in 1:7
+            quartic_endpoint .+= s5.dt * b_endpoint[i] .* s5.ks[i]
+        end
+        @test quartic_endpoint ≈ s5.yn rtol=1e-13 atol=1e-14
+
+        # With a zero linear operator, the preconditioned formulation must
+        # choose the same explicitly formed embedded fourth-order candidate.
+        plain4 = RK45.Stepper(f_exp!, [1.0], 0.0, 1/8;
+                                rtol=1e6, atol=0.0, min_dt=1/8, max_dt=1/8,
+                                locextrap=false)
+        @test RK45.step!(plain4)
+        p4 = RK45.PreconStepper(f_exp!, zeros(1), [1.0], 0.0, 1/8;
+                                 rtol=1e6, atol=0.0, min_dt=1/8, max_dt=1/8,
+                                 locextrap=false)
+        @test RK45.step!(p4)
+        @test p4.yn ≈ plain4.yn rtol=1e-13 atol=1e-14
+    end
 
     # Analytic tests
     # 1. Exponential decay: y' = -y => y(t) = y(0)*exp(-t)

@@ -288,11 +288,12 @@ end
 function step!(s)
     evaluate!(s)
 
-    if s.locextrap
-        s.yn .= s.y
-        for jj = 1:7
-            b5[jj] == 0 || (s.yn .+= s.dt*b5[jj].*s.ks[jj])
-        end
+    # Always form the trial explicitly. The final DP stage has passed through
+    # the nonlinear RHS and is not itself an RK solution.
+    bprop = s.locextrap ? b5 : b4
+    s.yn .= s.y
+    for jj = 1:7
+        bprop[jj] == 0 || (s.yn .+= s.dt*bprop[jj].*s.ks[jj])
     end
     
     fill!(s.yerr, 0)

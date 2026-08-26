@@ -32,6 +32,8 @@ or "verified" inside a superseded narrative do not outrank this list.
 > fourth/fifth-order weight-label defect in Julia and every Rust backend; that
 > coordinated correction and independent order/FSAL/endpoint tests are an
 > additional release gate even if current Julia/native equivalence is green.
+> Its design is now recorded in `native-port/PLANS.md` §17; do not release
+> until the implementation and exact-final-commit gates are green.
 
 > **Current handoff:** `v1.0.3` is published from tested commit `65489dd`.
 > Release-candidate run `31334708624` passed all 17 substantive jobs,

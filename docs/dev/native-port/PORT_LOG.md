@@ -5008,3 +5008,51 @@ three deleted remote tips were ancestors of the resulting `main`.
 Then implement the coordinated DOPRI correction on a fresh branch, run the real
 Apple quick diagnostic, finalize v1.0.4 public metadata, and repeat the exact
 release gate before tagging.
+
+## 2026-08-26 — DOPRI propagated-solution correction — Codex (GPT-5)
+**Status:** complete; uncommitted on `fix/dopri-propagation` pending lead
+review/commit authorization.
+**Did:** Corrected the Dormand--Prince 5(4) solution labels and propagation
+semantics in Julia, legacy callback Rust, resident CPU Rust, and resident CUDA.
+The default now advances with the true fifth-order final Butcher row; explicit
+`locextrap=false` advances with the embedded fourth-order row. No backend now
+retains a post-RHS internal stage as a numerical solution.
+**How:** `src/dopri.jl` now names the final-row weights `b5`, the embedded
+weights `b4`, and defines `errest = b4 - b5`; `src/RK45.jl::step!` always
+forms `yn` from the selected weights. `amalthea/src/native.rs::{DP_B5,DP_B4,
+CpuNativeSim::step}`, `amalthea/src/ffi.rs::{DP_B5,DP_B4,precon_step_inner}`,
+and `amalthea/src/cuda_native.rs::CudaNativeSim::step` mirror that explicit
+construction. CUDA uses `ystage_d` only as its transactional trial buffer
+after the stage loop, seeded from `field_d` and accumulated with the selected
+weights. Added independent rational/order, endpoint, FSAL, and preconditioned
+Julia coverage in `test/test_dopri.jl`; updated false-mode descriptions in
+the resident/legacy tests. Design precedes source in `PLANS.md §17`; MATH,
+BACKLOG, CHANGELOG, and the superseded historical §11.1 text now agree.
+**Decisions:** Preserve the existing numerical error vector values and make
+their orientation explicit (`b4 - b5`): weaknorm is sign-invariant, while an
+explicit convention prevents another label reversal. Keep `locextrap=false`
+as the documented embedded-fourth-order compatibility control; it is not an
+alias for the default and is not a residual-buffer optimization.
+**Gotchas:** The erroneous stage appeared plausible because the final DP stage
+is constructed with fifth-order weights, but nonlinear RHS evaluation changes
+it into a derivative input rather than an RK state. The independent endpoint
+table check allows at most eight Float64 ulps because summing its four dense
+polynomial rows has a different rounding path; the actual reconstructed
+endpoint is asserted at `1e-13`. Sandbox Julia tests that construct physical
+fixtures need a writable first `JULIA_DEPOT_PATH` component for Scratch.jl's
+`scratch_usage.toml`; this is environmental, not a test failure.
+**Tests:** `cargo build --release` passed. `cargo test --lib` passed 83/83.
+`PATH=/usr/local/cuda-13.3/bin:$PATH AMALTHEA_REQUIRE_CUDA_TESTS=1 cargo test
+--release` passed 83 library tests, 5 build-policy tests, and doc-tests.
+`julia --startup-file=no --project -e '…test_dopri.jl…'` passed 303/303:
+exact rational conditions, fifth-order 4.7–5.3 and fourth-order 3.7–4.3
+convergence assertions, FSAL `1e-13`, and quartic endpoint `1e-13`.
+With `JULIA_DEPOT_PATH=/tmp/luna-dopri-depot:/home/diego/.julia` and
+`--compiled-modules=no`, `test_native_phase1.jl` passed 30/30 (fixed
+trajectory relative difference `2.93e-16`) and `test_stepper_rust.jl` passed
+31/31. The required-CUDA Julia `test_native_cuda.jl` passed 104/104: adaptive
+trajectory relative difference `6.71e-15`, full solve `3.90e-16`, and corrected
+false-mode CPU/GPU/Julia parity/rejection/FSAL coverage. `git diff --check`
+passed.
+**Next:** Review the diff, commit only if the lead requests it, then push and
+repeat the hosted release gate before considering v1.0.4 publication.

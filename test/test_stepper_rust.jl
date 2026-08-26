@@ -78,7 +78,7 @@ using TestItems
         @test norm(s_jl.yn - s_true.yn) / norm(s_jl.yn) > 1e-5
 
         # Rejection must restore the old field even though the error was
-        # evaluated against the final internal-stage candidate.
+        # evaluated against the embedded fourth-order candidate.
         rejected_jl = PreconStepper(distributed_error_rhs!, linop, copy(y0),
                                     0.0, 1.0;
                                     rtol=1e-4, atol=0.0, locextrap=false)
