@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787662273036,
+  "lastUpdate": 1787832073776,
   "repoUrl": "https://github.com/vdiego28/Amalthea.jl",
   "entries": {
     "Benchmark": [
@@ -898,6 +898,35 @@ window.BENCHMARK_DATA = {
           {
             "name": "native mode-avg+plasma per-step (fixed dt)",
             "value": 2.868795,
+            "unit": "ms/step"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "vdiego28@yahoo.es",
+            "name": "vdiego28",
+            "username": "vdiego28"
+          },
+          "committer": {
+            "email": "vdiego28@yahoo.es",
+            "name": "vdiego28",
+            "username": "vdiego28"
+          },
+          "distinct": false,
+          "id": "30d26fd03bae66fb1ee1eba9156f3e7483d2ac59",
+          "message": "Fix DOPRI propagated solution",
+          "timestamp": "2026-08-26T08:01:42-04:00",
+          "tree_id": "16e9daa2e02a15efef6839562cb121026a88eb01",
+          "url": "https://github.com/vdiego28/Amalthea.jl/commit/30d26fd03bae66fb1ee1eba9156f3e7483d2ac59"
+        },
+        "date": 1787832072128,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "native mode-avg+plasma per-step (fixed dt)",
+            "value": 2.962524,
             "unit": "ms/step"
           }
         ]
