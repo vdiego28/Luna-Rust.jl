@@ -135,10 +135,10 @@ workload benchmark above. Exact commands and JSON interpretation are in
 
 Amalthea.jl requires Julia 1.10 or newer. It is not yet registered in Julia's
 General registry, so install the latest tagged release directly from GitHub
-(currently `v1.0.3`):
+(currently `v1.0.4`):
 
 ```julia
-pkg> add https://github.com/vdiego28/Amalthea.jl#v1.0.3
+pkg> add https://github.com/vdiego28/Amalthea.jl#v1.0.4
 ```
 
 Check the [Releases page](https://github.com/vdiego28/Amalthea.jl/releases)

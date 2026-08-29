@@ -36,6 +36,8 @@ or "verified" inside a superseded narrative do not outrank this list.
 > until the implementation and exact-final-commit gates are green.
 
 > **Current handoff:** `v1.0.3` is published from tested commit `65489dd`.
+> `v1.0.4` at `30d26fd` has passed both its branch and exact-`main` hosted
+> matrices; the tag/release workflow remains the final publication gate.
 > Release-candidate run `31334708624` passed all 17 substantive jobs,
 > including native Linux ARM64 installation/FFI; release workflow
 > `31383860726` published four CPU binaries plus `SHA256SUMS.txt`, and every

@@ -37,24 +37,24 @@ julia> (Sys.KERNEL, Sys.ARCH)
 Install Julia from [julialang.org/downloads](https://julialang.org/downloads/),
 start Julia, and enter package mode with `]`. Amalthea is not yet registered in
 Julia's General registry, so install a tagged release directly from GitHub.
-The current release is `v1.0.3`:
+The current release is `v1.0.4`:
 
 ```julia
-pkg> add https://github.com/vdiego28/Amalthea.jl#v1.0.3
+pkg> add https://github.com/vdiego28/Amalthea.jl#v1.0.4
 ```
 
 The equivalent programmatic command is the same on every operating system:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="v1.0.3")
+Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="v1.0.4")
 ```
 
 Use the newest tag shown on the project's
 [Releases page](https://github.com/vdiego28/Amalthea.jl/releases). Do not omit
 the tag unless a source build of the development branch is intended.
 
-The `v1.0.3` binaries cover Linux `x86_64`, Linux ARM64, macOS Apple Silicon,
+The `v1.0.4` binaries cover Linux `x86_64`, Linux ARM64, macOS Apple Silicon,
 and Windows `x86_64`. Other OS/architecture combinations use the
 architecture-safe source fallback.
 
@@ -321,10 +321,10 @@ selecting the newer release tag. The current tagged release is:
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="v1.0.3")
+Pkg.add(url="https://github.com/vdiego28/Amalthea.jl", rev="v1.0.4")
 ```
 
-Replace `v1.0.3` with the newer tag shown on the Releases page when one is
+Replace `v1.0.4` with the newer tag shown on the Releases page when one is
 published. The package's build step runs automatically after the revision is
 changed; `Pkg.build("Amalthea")` can be used to repeat it manually.
 

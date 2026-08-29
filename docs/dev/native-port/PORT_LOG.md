@@ -5056,3 +5056,26 @@ false-mode CPU/GPU/Julia parity/rejection/FSAL coverage. `git diff --check`
 passed.
 **Next:** Review the diff, commit only if the lead requests it, then push and
 repeat the hosted release gate before considering v1.0.4 publication.
+
+## 2026-08-29 — v1.0.4 final release metadata — Codex (GPT-5)
+**Status:** in progress; public tag/version references updated, pending the
+exact-final-commit hosted documentation and test gates.
+**Did:** Updated the user-facing README and installation manual from the last
+published tag (`v1.0.3`) to the v1.0.4 tag that is about to be published.
+Recorded the two hosted-green DOPRI gates in the live backlog handoff.
+**How:** `README.md` and `docs/src/installation.md` now use
+`#v1.0.4`/`rev="v1.0.4"`; no runtime, package-version, artifact, or workflow
+logic changed. `CITATION.cff` and the README BibTeX deliberately retain the
+v1.0.3-specific Zenodo record until v1.0.4 publication supplies a real
+version DOI; the concept DOI remains the version-independent citation route.
+**Decisions:** Treat accurate installation instructions as tag content, not a
+post-release cleanup. Do not invent a v1.0.4 Zenodo DOI before GitHub release
+publication. The Apple quick diagnostic is explicitly waived by the lead for
+this release because no Apple Silicon hardware is available.
+**Gotchas:** This documentation commit changes the exact tag target, so both
+`main` hosted workflows must pass again before creating `v1.0.4`.
+**Tests:** Branch run `32966398790` and exact-main runs `33069608530` (tests)
+and `33069608489` (documentation) passed for DOPRI commit `30d26fd`.
+**Next:** Commit/push this metadata, require its exact-main test and
+documentation workflows to pass, then create/push the lightweight `v1.0.4`
+tag and verify all published assets against `SHA256SUMS.txt`.
